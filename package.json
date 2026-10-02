@@ -9,9 +9,10 @@
     "migrate:down": "bun src/platform/database/migrate.ts down",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "bun test --timeout 30000 test/unit test/integration",
+    "test": "bun test --timeout 60000 test/unit test/integration test/concurrency",
     "test:unit": "bun test test/unit",
     "test:integration": "bun test --timeout 30000 test/integration",
+    "test:concurrency": "bun test --timeout 60000 test/concurrency",
     "test:spike": "bun test --timeout 60000 test/spike",
     "infra:up": "docker compose up -d --wait postgres sqs",
     "infra:down": "docker compose down -v"
