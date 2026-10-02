@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "start:api": "bun src/main.api.ts",
+    "migrate:up": "bun src/platform/database/migrate.ts up",
+    "migrate:down": "bun src/platform/database/migrate.ts down",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "bun test --timeout 30000 test/unit test/integration",
