@@ -54,6 +54,7 @@ beforeAll(async () => {
     migrations: {
       migrationsList: [Migration20261001000000SpikeAccount],
       tableName: 'spike_mikro_orm_migrations',
+      snapshot: false,
     },
   });
   await orm.migrator.up();
