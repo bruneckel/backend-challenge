@@ -16,6 +16,25 @@ export interface AppConfig {
     backoffBaseMs: number;
     backoffMaxMs: number;
   };
+  sqs: {
+    endpoint: string;
+    region: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    commandsQueue: string;
+    deadLetterQueue: string;
+    eventsQueue: string;
+    publishTimeoutMs: number;
+  };
+  outbox: {
+    batchSize: number;
+    pollIntervalMs: number;
+    retryBaseMs: number;
+    retryMaxMs: number;
+  };
+  worker: {
+    publisherEnabled: boolean;
+  };
 }
 
 export class InvalidConfigurationError extends Error {
@@ -27,6 +46,15 @@ export class InvalidConfigurationError extends Error {
 
 const integer = (fallback: number, min: number, max = Number.MAX_SAFE_INTEGER) =>
   z.coerce.number().int().min(min).max(max).default(fallback);
+
+const fifoQueue = (fallback: string) =>
+  z.string().regex(/^[A-Za-z0-9_-]{1,75}\.fifo$/, 'must be a FIFO queue name ending in .fifo').default(fallback);
+
+const toggle = (fallback: boolean) =>
+  z
+    .enum(['true', 'false'])
+    .default(fallback ? 'true' : 'false')
+    .transform((value) => value === 'true');
 
 const environmentSchema = z
   .object({
@@ -43,10 +71,27 @@ const environmentSchema = z
     REFERENCE_MAX_ATTEMPTS: integer(10, 1),
     REFERENCE_BACKOFF_BASE_MS: integer(2000, 1),
     REFERENCE_BACKOFF_MAX_MS: integer(120_000, 1),
+    AWS_ENDPOINT_URL: z.url().default('http://localhost:4566'),
+    AWS_REGION: z.string().regex(/^[a-z0-9-]{1,32}$/, 'must be an AWS region name').default('us-east-1'),
+    AWS_ACCESS_KEY_ID: z.string().min(1).default('test'),
+    AWS_SECRET_ACCESS_KEY: z.string().min(1).default('test'),
+    SQS_COMMANDS_QUEUE: fifoQueue('wager-transactions.fifo'),
+    SQS_DEAD_LETTER_QUEUE: fifoQueue('wager-transactions-dlq.fifo'),
+    SQS_EVENTS_QUEUE: fifoQueue('wagering-events.fifo'),
+    SQS_PUBLISH_TIMEOUT_MS: integer(5000, 1),
+    OUTBOX_BATCH_SIZE: integer(10, 1, 10),
+    OUTBOX_POLL_INTERVAL_MS: integer(500, 1),
+    OUTBOX_RETRY_BASE_MS: integer(1000, 1),
+    OUTBOX_RETRY_MAX_MS: integer(300_000, 1),
+    OUTBOX_PUBLISHER_ENABLED: toggle(true),
   })
   .refine((env) => env.REFERENCE_BACKOFF_MAX_MS >= env.REFERENCE_BACKOFF_BASE_MS, {
     path: ['REFERENCE_BACKOFF_MAX_MS'],
     message: 'must not be lower than REFERENCE_BACKOFF_BASE_MS',
+  })
+  .refine((env) => env.OUTBOX_RETRY_MAX_MS >= env.OUTBOX_RETRY_BASE_MS, {
+    path: ['OUTBOX_RETRY_MAX_MS'],
+    message: 'must not be lower than OUTBOX_RETRY_BASE_MS',
   });
 
 export function loadConfig(env: Readonly<Record<string, string | undefined>>): AppConfig {
@@ -72,6 +117,25 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
       maxAttempts: values.REFERENCE_MAX_ATTEMPTS,
       backoffBaseMs: values.REFERENCE_BACKOFF_BASE_MS,
       backoffMaxMs: values.REFERENCE_BACKOFF_MAX_MS,
+    },
+    sqs: {
+      endpoint: values.AWS_ENDPOINT_URL,
+      region: values.AWS_REGION,
+      accessKeyId: values.AWS_ACCESS_KEY_ID,
+      secretAccessKey: values.AWS_SECRET_ACCESS_KEY,
+      commandsQueue: values.SQS_COMMANDS_QUEUE,
+      deadLetterQueue: values.SQS_DEAD_LETTER_QUEUE,
+      eventsQueue: values.SQS_EVENTS_QUEUE,
+      publishTimeoutMs: values.SQS_PUBLISH_TIMEOUT_MS,
+    },
+    outbox: {
+      batchSize: values.OUTBOX_BATCH_SIZE,
+      pollIntervalMs: values.OUTBOX_POLL_INTERVAL_MS,
+      retryBaseMs: values.OUTBOX_RETRY_BASE_MS,
+      retryMaxMs: values.OUTBOX_RETRY_MAX_MS,
+    },
+    worker: {
+      publisherEnabled: values.OUTBOX_PUBLISHER_ENABLED,
     },
   };
 }

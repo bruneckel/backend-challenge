@@ -1,5 +1,13 @@
 import { waitUntil } from './async';
 
+export interface SpawnedProcess {
+  readonly name: string;
+  readonly exited: Promise<number>;
+  output(): string;
+  port(): number | undefined;
+  kill(signal: NodeJS.Signals): void;
+}
+
 export interface RunningProcess {
   readonly url: string;
   readonly instanceId: string;
@@ -30,16 +38,17 @@ async function pump(stream: ReadableStream<Uint8Array>, sink: Collected, onLine:
 function listeningPort(line: string): number | undefined {
   try {
     const entry = JSON.parse(line) as { msg?: unknown; port?: unknown };
-    return entry.msg === 'api listening' && typeof entry.port === 'number' ? entry.port : undefined;
+    return typeof entry.msg === 'string' && entry.msg.endsWith(' listening') && typeof entry.port === 'number'
+      ? entry.port
+      : undefined;
   } catch {
     return undefined;
   }
 }
 
-export async function startApiProcess(environment: Record<string, string>, timeoutMs = 20_000): Promise<RunningProcess> {
-  const instanceId = environment.INSTANCE_ID ?? `api-${Bun.randomUUIDv7()}`;
-  const child = Bun.spawn(['bun', 'src/main.api.ts'], {
-    env: { ...process.env, PORT: '0', INSTANCE_ID: instanceId, ...environment },
+export function spawnProcess(entrypoint: string, environment: Record<string, string>, name = entrypoint): SpawnedProcess {
+  const child = Bun.spawn(['bun', entrypoint], {
+    env: { ...process.env, PORT: '0', ...environment },
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -49,25 +58,55 @@ export async function startApiProcess(environment: Record<string, string>, timeo
     port ??= listeningPort(line);
   });
   void pump(child.stderr, collected, () => undefined);
-  await waitUntil(() => port !== undefined || child.exitCode !== null, { timeoutMs, description: `${instanceId} to listen` });
+  return {
+    name,
+    exited: child.exited,
+    output: () => collected.text,
+    port: () => port,
+    kill: (signal) => child.kill(signal),
+  };
+}
+
+export async function startProcess(
+  entrypoint: string,
+  environment: Record<string, string>,
+  timeoutMs = 20_000,
+): Promise<RunningProcess> {
+  const instanceId = environment.INSTANCE_ID ?? `${entrypoint.split('/').at(-1)}-${Bun.randomUUIDv7()}`;
+  const spawned = spawnProcess(entrypoint, { INSTANCE_ID: instanceId, ...environment }, instanceId);
+  let exitCode: number | undefined;
+  void spawned.exited.then((code) => {
+    exitCode = code;
+  });
+  await waitUntil(() => spawned.port() !== undefined || exitCode !== undefined, {
+    timeoutMs,
+    description: `${instanceId} to listen`,
+  });
+  const port = spawned.port();
   if (port === undefined) {
-    throw new Error(`${instanceId} exited before listening:\n${collected.text}`);
+    throw new Error(`${instanceId} exited before listening:\n${spawned.output()}`);
   }
   const url = `http://127.0.0.1:${port}`;
-  await waitUntil(
-    async () => (await fetch(`${url}/health/ready`).catch(() => undefined))?.status === 200,
-    { timeoutMs, description: `${instanceId} to become ready` },
-  );
+  await waitUntil(async () => (await fetch(`${url}/health/ready`).catch(() => undefined))?.status === 200, {
+    timeoutMs,
+    description: `${instanceId} to become ready`,
+  });
   return {
     url,
     instanceId,
-    output: () => collected.text,
+    output: spawned.output,
     async stop(signal: NodeJS.Signals = 'SIGTERM') {
-      child.kill(signal);
-      const timer = setTimeout(() => child.kill('SIGKILL'), 15_000);
-      const code = await child.exited;
+      spawned.kill(signal);
+      const timer = setTimeout(() => spawned.kill('SIGKILL'), 15_000);
+      const code = await spawned.exited;
       clearTimeout(timer);
       return code;
     },
   };
 }
+
+export const startApiProcess = (environment: Record<string, string>, timeoutMs?: number) =>
+  startProcess('src/main.api.ts', environment, timeoutMs);
+
+export const startWorkerProcess = (environment: Record<string, string>, timeoutMs?: number) =>
+  startProcess('src/main.worker.ts', environment, timeoutMs);
