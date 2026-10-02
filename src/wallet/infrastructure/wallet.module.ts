@@ -140,10 +140,12 @@ const useCases = [
       useFactory: (
         unitOfWork: Scoped,
         clock: Clock,
+        ids: IdGenerator,
         metrics: Metrics,
         logger: Logger,
-      ) => new FailPendingTransaction({ unitOfWork, clock, metrics, logger }),
-      inject: [WAGERING_UNIT_OF_WORK, CLOCK, METRICS, LOGGER],
+      ) =>
+        new FailPendingTransaction({ unitOfWork, clock, ids, metrics, logger }),
+      inject: [WAGERING_UNIT_OF_WORK, CLOCK, ID_GENERATOR, METRICS, LOGGER],
     },
     {
       provide: WalletQueries,

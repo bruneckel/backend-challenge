@@ -5,6 +5,7 @@ import {
   pendingTransaction,
   walletWith,
 } from '@test/support/wallet-fixtures';
+import { WagerTransactionFailed } from '@wallet/domain/events/wager-transaction-failed';
 import { WagerTransactionPendingReference } from '@wallet/domain/events/wager-transaction-pending-reference';
 import { WagerTransactionProcessed } from '@wallet/domain/events/wager-transaction-processed';
 import { WagerTransactionRejected } from '@wallet/domain/events/wager-transaction-rejected';
@@ -176,6 +177,42 @@ describe('WagerTransactionPendingReference', () => {
 
   test('can only describe a transaction waiting for its reference', () => {
     expect(() => WagerTransactionPendingReference.from(bet(), context)).toThrow(
+      InvalidTransactionStateError,
+    );
+  });
+});
+
+describe('WagerTransactionFailed', () => {
+  test('carries the failure code and the balance observed when the transaction was recorded', () => {
+    const refund = pendingTransaction(
+      WagerTransactionKind.Refund,
+      brl('25.00'),
+      {
+        id: 'tx-3',
+        referenceExternalTransactionId: 'ext-1',
+      },
+    );
+    refund.markPendingReference(brl('100.00'), LATER, LATER);
+    refund.fail(FailureCode.ProcessingFailed, LATER);
+
+    const event = WagerTransactionFailed.from(refund, context);
+
+    expect(event.eventType).toBe('WagerTransactionFailed');
+    expect(event.version).toBe(1);
+    expect(event.aggregateId).toBe('tx-3');
+    expect(event.messageGroupId).toBe('wallet-1');
+    expect(serialized(event).data).toMatchObject({
+      transactionId: 'tx-3',
+      walletId: 'wallet-1',
+      kind: 'REFUND',
+      money: { amount: '25.00', currency: 'BRL' },
+      failureCode: 'PROCESSING_FAILED',
+      balance: { amount: '100.00', currency: 'BRL' },
+    });
+  });
+
+  test('can only describe a failed transaction', () => {
+    expect(() => WagerTransactionFailed.from(bet(), context)).toThrow(
       InvalidTransactionStateError,
     );
   });

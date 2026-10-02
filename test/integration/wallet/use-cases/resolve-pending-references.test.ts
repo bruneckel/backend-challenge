@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { UuidV7Generator } from '@platform/ids/uuid-v7-generator';
+import { MikroOrmUnitOfWork } from '@platform/database/mikro-orm-unit-of-work';
 import { TransientFailure } from '@shared/application/transient-failure';
+import { rejectionOf } from '@test/support/async';
+import { RecordingMetrics } from '@test/support/recording-metrics';
+import { createWageringScope } from '@wallet/infrastructure/persistence/wagering-scope';
 import { commandFor, referencing } from '@test/support/commands';
 import { walletInvariantViolations } from '@test/support/invariants';
 import {
@@ -46,6 +51,7 @@ function resolver(
     fail: new FailPendingTransaction({
       unitOfWork: harness.unitOfWork,
       clock: wagering.clock,
+      ids: new UuidV7Generator(),
       metrics: noopMetrics,
       logger: silentLogger,
     }),
@@ -59,6 +65,13 @@ async function waitingRefund() {
   const bet = commandFor(wallet, Bet, '10.00');
   const refund = await wagering.submit.execute(referencing(bet, Refund));
   return { wallet, bet, refund };
+}
+
+async function failedEvents(transactionId: string) {
+  return harness.database.sql`
+    select payload->'data'->>'failureCode' as failure_code, message_group_id as group_id
+    from outbox_messages
+    where aggregate_id = ${transactionId} and event_type = 'WagerTransactionFailed'`;
 }
 
 async function stateOf(transactionId: string) {
@@ -118,7 +131,7 @@ describe('ResolvePendingReferences', () => {
   });
 
   test('marks a transaction FAILED after repeated processing errors and keeps its observed balance', async () => {
-    const { refund } = await waitingRefund();
+    const { refund, wallet } = await waitingRefund();
     const broken = resolver({
       execute: async () => {
         throw new Error('row cannot be read');
@@ -140,6 +153,47 @@ describe('ResolvePendingReferences', () => {
       result_balance: '100.00',
       next_reference_attempt_at: null,
     });
+    expect(await failedEvents(refund.transactionId)).toEqual([
+      { failure_code: 'PROCESSING_FAILED', group_id: wallet.id },
+    ]);
+  });
+
+  test('announces the failure and counts it only after the commit', async () => {
+    const { refund, wallet } = await waitingRefund();
+    const metrics = new RecordingMetrics();
+    const crashing = new FailPendingTransaction({
+      unitOfWork: new MikroOrmUnitOfWork(
+        harness.orm,
+        (em) => {
+          const scope = createWageringScope(em);
+          const enqueue = scope.outbox.enqueue.bind(scope.outbox);
+          scope.outbox.enqueue = async (messages) => {
+            await enqueue(messages);
+            throw new Error('crash before commit');
+          };
+          return scope;
+        },
+        { lockTimeoutMs: 2000 },
+      ),
+      clock: wagering.clock,
+      ids: new UuidV7Generator(),
+      metrics,
+      logger: silentLogger,
+    });
+
+    const failure = await rejectionOf(
+      crashing.execute({
+        transactionId: refund.transactionId,
+        walletId: wallet.id,
+      }),
+    );
+
+    expect(failure).toMatchObject({ message: 'crash before commit' });
+    expect(metrics.count('wager_transactions_total')).toBe(0);
+    expect((await stateOf(refund.transactionId)).status).toBe(
+      'PENDING_REFERENCE',
+    );
+    expect(await failedEvents(refund.transactionId)).toEqual([]);
   });
 
   test('does not count transient failures toward FAILED', async () => {
