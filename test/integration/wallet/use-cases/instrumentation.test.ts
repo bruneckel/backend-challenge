@@ -1,5 +1,6 @@
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -8,6 +9,7 @@ import {
 } from 'bun:test';
 import { InboxMessage } from '@messaging/domain/inbox-message';
 import { MikroOrmUnitOfWork } from '@platform/database/mikro-orm-unit-of-work';
+import { inconsistentWallets } from '@test/support/invariants';
 import { gate, rejectionOf } from '@test/support/async';
 import { commandFor, referencing } from '@test/support/commands';
 import {
@@ -36,6 +38,10 @@ beforeAll(async () => {
 beforeEach(() => {
   metrics = new RecordingMetrics();
   wagering = createWagering(harness.unitOfWork, 3, { metrics });
+});
+
+afterEach(async () => {
+  expect(await inconsistentWallets(harness.database.sql)).toEqual([]);
 });
 
 afterAll(async () => {

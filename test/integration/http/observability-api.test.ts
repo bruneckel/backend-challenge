@@ -1,8 +1,17 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
 import { PinoLogger } from '@observability/logger/pino-logger';
+import { inconsistentWallets } from '@test/support/invariants';
 import { type ApiHarness, startApi } from '@test/support/api';
 
 let api: ApiHarness;
+const corruptedOnPurpose: string[] = [];
 const lines: Record<string, unknown>[] = [];
 const raw: string[] = [];
 
@@ -18,6 +27,12 @@ beforeAll(async () => {
     },
   });
   api = await startApi({ INSTANCE_ID: 'api-observed' }, logger);
+});
+
+afterEach(async () => {
+  expect(
+    await inconsistentWallets(api.database.sql, corruptedOnPurpose),
+  ).toEqual([]);
 });
 
 afterAll(async () => {
@@ -126,6 +141,7 @@ describe('metrics endpoint', () => {
   test('counts reconciliations and the divergences they find', async () => {
     const consistent = await openWallet();
     const drifted = await openWallet();
+    corruptedOnPurpose.push(drifted.id);
     await api.database
       .sql`update wallets set balance_amount = '99.00' where id = ${drifted.id}`;
 

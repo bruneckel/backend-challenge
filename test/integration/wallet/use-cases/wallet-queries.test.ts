@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
+import { inconsistentWallets } from '@test/support/invariants';
 import { rejectionOf } from '@test/support/async';
 import { commandFor, referencing } from '@test/support/commands';
 import {
@@ -24,6 +32,10 @@ const { Bet, Win, Refund } = WagerTransactionKind;
 beforeAll(async () => {
   harness = await createPersistenceHarness();
   wagering = createWagering(harness.unitOfWork);
+});
+
+afterEach(async () => {
+  expect(await inconsistentWallets(harness.database.sql)).toEqual([]);
 });
 
 afterAll(async () => {

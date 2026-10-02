@@ -1,10 +1,25 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
+import { inconsistentWallets } from '@test/support/invariants';
 import { type ApiHarness, startApi } from '@test/support/api';
 
 let api: ApiHarness;
+const corruptedOnPurpose: string[] = [];
 
 beforeAll(async () => {
   api = await startApi({ DB_LOCK_TIMEOUT_MS: '300' });
+});
+
+afterEach(async () => {
+  expect(
+    await inconsistentWallets(api.database.sql, corruptedOnPurpose),
+  ).toEqual([]);
 });
 
 afterAll(async () => {
@@ -340,6 +355,7 @@ describe('POST /wallets/:walletId/reconciliation', () => {
 
   test('answers 200 flagging a stored balance that drifted from the ledger', async () => {
     const wallet = await openWallet('100.00');
+    corruptedOnPurpose.push(wallet.id);
     await api.database
       .sql`update wallets set balance_amount = '99.00' where id = ${wallet.id}`;
 
