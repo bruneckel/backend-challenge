@@ -16,7 +16,14 @@ describe('loadConfig', () => {
         statementTimeoutMs: 10000,
         idleInTransactionTimeoutMs: 30000,
       },
-      reference: { maxAttempts: 10, backoffBaseMs: 2000, backoffMaxMs: 120000 },
+      reference: {
+        maxAttempts: 10,
+        backoffBaseMs: 2000,
+        backoffMaxMs: 120000,
+        schedulerBatchSize: 20,
+        schedulerPollIntervalMs: 1000,
+        maxProcessingFailures: 3,
+      },
       sqs: {
         endpoint: 'http://localhost:4566',
         region: 'us-east-1',
@@ -45,7 +52,11 @@ describe('loadConfig', () => {
         retryMaxMs: 120000,
         maxConcurrentGroups: 5,
       },
-      worker: { publisherEnabled: true, consumerEnabled: true },
+      worker: {
+        publisherEnabled: true,
+        consumerEnabled: true,
+        schedulerEnabled: true,
+      },
     });
   });
 
@@ -85,6 +96,10 @@ describe('loadConfig', () => {
       CONSUMER_RETRY_BASE_MS: '1000',
       CONSUMER_RETRY_MAX_MS: '4000',
       CONSUMER_MAX_CONCURRENT_GROUPS: '2',
+      REFERENCE_SCHEDULER_ENABLED: 'false',
+      REFERENCE_SCHEDULER_BATCH_SIZE: '7',
+      REFERENCE_SCHEDULER_POLL_INTERVAL_MS: '25',
+      REFERENCE_MAX_PROCESSING_FAILURES: '2',
     });
 
     expect(config).toEqual({
@@ -97,7 +112,14 @@ describe('loadConfig', () => {
         statementTimeoutMs: 2000,
         idleInTransactionTimeoutMs: 4000,
       },
-      reference: { maxAttempts: 3, backoffBaseMs: 100, backoffMaxMs: 400 },
+      reference: {
+        maxAttempts: 3,
+        backoffBaseMs: 100,
+        backoffMaxMs: 400,
+        schedulerBatchSize: 7,
+        schedulerPollIntervalMs: 25,
+        maxProcessingFailures: 2,
+      },
       sqs: {
         endpoint: 'http://sqs:4566',
         region: 'sa-east-1',
@@ -126,7 +148,11 @@ describe('loadConfig', () => {
         retryMaxMs: 4000,
         maxConcurrentGroups: 2,
       },
-      worker: { publisherEnabled: false, consumerEnabled: false },
+      worker: {
+        publisherEnabled: false,
+        consumerEnabled: false,
+        schedulerEnabled: false,
+      },
     });
   });
 

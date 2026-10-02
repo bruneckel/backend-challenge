@@ -1,6 +1,7 @@
 import type { Clock } from '@shared/application/clock';
 import type { IdGenerator } from '@shared/application/id-generator';
 import type { UnitOfWork } from '@shared/application/unit-of-work';
+import type { PendingReferenceCandidate } from '@wallet/application/ports/wager-transaction-repository';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
 import { TransactionSettler } from '@wallet/application/transaction-settler';
 import type {
@@ -12,10 +13,7 @@ import {
   WagerTransactionStatus,
 } from '@wallet/domain/transaction/wager-transaction';
 
-export interface PendingReferenceCandidate {
-  transactionId: string;
-  walletId: string;
-}
+export type { PendingReferenceCandidate } from '@wallet/application/ports/wager-transaction-repository';
 
 export type PendingReferenceOutcome =
   'processed' | 'rejected' | 'still_pending' | 'skipped';

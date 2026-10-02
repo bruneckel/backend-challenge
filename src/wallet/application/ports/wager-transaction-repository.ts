@@ -31,6 +31,11 @@ export class StaleTransactionStateError extends ApplicationError {
   }
 }
 
+export interface PendingReferenceCandidate {
+  transactionId: string;
+  walletId: string;
+}
+
 export interface WagerTransactionRepository {
   findById(id: string): Promise<WagerTransaction | null>;
   findByIdempotencyKey(
@@ -47,4 +52,8 @@ export interface WagerTransactionRepository {
     referenceTransactionId: string,
     kind: WagerTransactionKind,
   ): Promise<boolean>;
+  findDueReferenceCandidates(
+    now: Date,
+    limit: number,
+  ): Promise<PendingReferenceCandidate[]>;
 }

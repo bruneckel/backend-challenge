@@ -4,6 +4,7 @@ import { classifyDatabaseError } from '@platform/database/database-failure';
 import {
   type DuplicateTransactionKey,
   DuplicateWagerTransactionError,
+  type PendingReferenceCandidate,
   StaleTransactionStateError,
   type WagerTransactionRepository,
 } from '@wallet/application/ports/wager-transaction-repository';
@@ -93,6 +94,29 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
       status: WagerTransactionStatus.Processed,
     });
     return count > 0;
+  }
+
+  async findDueReferenceCandidates(
+    now: Date,
+    limit: number,
+  ): Promise<PendingReferenceCandidate[]> {
+    const rows = await this.em.find(
+      WagerTransactionRecord,
+      {
+        status: WagerTransactionStatus.PendingReference,
+        nextReferenceAttemptAt: { $lte: now },
+      },
+      {
+        fields: ['id', 'walletId'],
+        orderBy: { nextReferenceAttemptAt: 'asc', id: 'asc' },
+        limit,
+        disableIdentityMap: true,
+      },
+    );
+    return rows.map((row) => ({
+      transactionId: row.id,
+      walletId: row.walletId,
+    }));
   }
 
   private async findOne(

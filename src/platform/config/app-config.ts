@@ -15,6 +15,9 @@ export interface AppConfig {
     maxAttempts: number;
     backoffBaseMs: number;
     backoffMaxMs: number;
+    schedulerBatchSize: number;
+    schedulerPollIntervalMs: number;
+    maxProcessingFailures: number;
   };
   sqs: {
     endpoint: string;
@@ -47,6 +50,7 @@ export interface AppConfig {
   worker: {
     publisherEnabled: boolean;
     consumerEnabled: boolean;
+    schedulerEnabled: boolean;
   };
 }
 
@@ -99,6 +103,10 @@ const environmentSchema = z
     REFERENCE_MAX_ATTEMPTS: integer(10, 1),
     REFERENCE_BACKOFF_BASE_MS: integer(2000, 1),
     REFERENCE_BACKOFF_MAX_MS: integer(120_000, 1),
+    REFERENCE_SCHEDULER_ENABLED: toggle(true),
+    REFERENCE_SCHEDULER_BATCH_SIZE: integer(20, 1, 500),
+    REFERENCE_SCHEDULER_POLL_INTERVAL_MS: integer(1000, 1),
+    REFERENCE_MAX_PROCESSING_FAILURES: integer(3, 1),
     AWS_ENDPOINT_URL: z.url().default('http://localhost:4566'),
     AWS_REGION: z
       .string()
@@ -193,6 +201,9 @@ export function loadConfig(
       maxAttempts: values.REFERENCE_MAX_ATTEMPTS,
       backoffBaseMs: values.REFERENCE_BACKOFF_BASE_MS,
       backoffMaxMs: values.REFERENCE_BACKOFF_MAX_MS,
+      schedulerBatchSize: values.REFERENCE_SCHEDULER_BATCH_SIZE,
+      schedulerPollIntervalMs: values.REFERENCE_SCHEDULER_POLL_INTERVAL_MS,
+      maxProcessingFailures: values.REFERENCE_MAX_PROCESSING_FAILURES,
     },
     sqs: {
       endpoint: values.AWS_ENDPOINT_URL,
@@ -225,6 +236,7 @@ export function loadConfig(
     worker: {
       publisherEnabled: values.OUTBOX_PUBLISHER_ENABLED,
       consumerEnabled: values.CONSUMER_ENABLED,
+      schedulerEnabled: values.REFERENCE_SCHEDULER_ENABLED,
     },
   };
 }

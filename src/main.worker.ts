@@ -18,6 +18,7 @@ try {
     instanceId: config.instanceId,
     publisher: config.worker.publisherEnabled,
     consumer: config.worker.consumerEnabled,
+    scheduler: config.worker.schedulerEnabled,
   });
 } catch (error) {
   log({

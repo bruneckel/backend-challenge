@@ -7,6 +7,7 @@ import { ShutdownLogger } from '@platform/lifecycle/shutdown-logger';
 import { PlatformModule } from '@platform/platform.module';
 import { WagerConsumerModule } from '@wallet/infrastructure/messaging/wager-consumer.module';
 import { walletEntities } from '@wallet/infrastructure/persistence/wallet-entities';
+import { PendingReferenceSchedulerModule } from '@wallet/infrastructure/scheduling/pending-reference-scheduler.module';
 
 @Module({})
 export class WorkerModule {
@@ -21,6 +22,9 @@ export class WorkerModule {
         HealthModule,
         ...(config.worker.publisherEnabled ? [OutboxPublisherModule] : []),
         ...(config.worker.consumerEnabled ? [WagerConsumerModule] : []),
+        ...(config.worker.schedulerEnabled
+          ? [PendingReferenceSchedulerModule]
+          : []),
       ],
       providers: [ShutdownLogger],
     };
