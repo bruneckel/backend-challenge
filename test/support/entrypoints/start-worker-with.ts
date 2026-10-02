@@ -9,6 +9,14 @@ import { type AppConfig, loadConfig } from '@platform/config/app-config';
 export const log = (entry: Record<string, unknown>) =>
   process.stdout.write(`${JSON.stringify(entry)}\n`);
 
+export async function pause(
+  marker: string,
+  fields: Record<string, unknown> = {},
+): Promise<void> {
+  log({ level: 'info', msg: marker, ...fields });
+  await Bun.sleep(Number.parseInt(process.env.TEST_PAUSE_MS ?? '3000', 10));
+}
+
 export async function startWorkerWith(
   override: (
     builder: TestingModuleBuilder,

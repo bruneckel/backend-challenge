@@ -9,9 +9,7 @@ import {
   type SubmitWagerTransactionCommand,
 } from '@wallet/application/use-cases/submit-wager-transaction';
 import { WagerMessageHandler } from '@wallet/infrastructure/messaging/wager-message-handler';
-import { log, startWorkerWith } from './start-worker-with';
-
-const slowMs = Number.parseInt(process.env.TEST_SLOW_HANDLER_MS ?? '1500', 10);
+import { log, pause, startWorkerWith } from './start-worker-with';
 
 await startWorkerWith((builder) =>
   builder.overrideProvider(WagerMessageHandler).useFactory({
@@ -26,12 +24,9 @@ await startWorkerWith((builder) =>
           command: SubmitWagerTransactionCommand,
           delivery: InboxMessage,
         ) {
-          log({
-            level: 'info',
-            msg: 'processing started',
+          await pause('processing started', {
             messageId: delivery.messageId,
           });
-          await Bun.sleep(slowMs);
           const outcome = await submit.executeDelivery(command, delivery);
           log({
             level: 'info',

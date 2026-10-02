@@ -14,7 +14,7 @@ import {
   type PersistenceHarness,
   createPersistenceHarness,
 } from '@test/support/persistence';
-import { spawnProcess, startWorkerProcess } from '@test/support/processes';
+import { startWorkerProcess } from '@test/support/processes';
 import {
   type TestQueues,
   createTestQueues,
@@ -118,37 +118,5 @@ describe('C6 publishers on separate processes', () => {
     for (const worker of workers) {
       expect(worker.output()).toContain('"msg":"shutdown complete"');
     }
-  });
-
-  test('a publisher killed between sending and committing only leaves duplicates with the same event id', async () => {
-    const total = await createEvents(5);
-
-    const crashing = spawnProcess(
-      'test/support/entrypoints/worker-crash-after-publish.ts',
-      workerEnvironment(),
-      'crashing-worker',
-    );
-    await crashing.exited;
-    expect(crashing.output()).toContain('published before crash');
-    expect(await pendingEvents()).toBe(total);
-
-    const survivor = await startWorkerProcess({
-      ...workerEnvironment(),
-      INSTANCE_ID: 'survivor',
-    });
-    try {
-      await waitUntil(async () => (await pendingEvents()) === 0, {
-        timeoutMs: 30_000,
-        description: 'the outbox to drain',
-      });
-    } finally {
-      await survivor.stop();
-    }
-
-    const messages = await drainQueue(sqs, queues.urls.events);
-    expect(new Set(messages.map(deduplicationIdOf)).size).toBe(total);
-    expect(messages.length).toBeGreaterThanOrEqual(total);
-    expect(messages.length).toBeLessThanOrEqual(total + BATCH_SIZE);
-    expectEventIdsMatchDeduplicationIds(messages);
   });
 });

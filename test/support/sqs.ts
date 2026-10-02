@@ -1,6 +1,7 @@
 import {
   DeleteMessageCommand,
   DeleteQueueCommand,
+  GetQueueAttributesCommand,
   type Message,
   ReceiveMessageCommand,
   type SQSClient,
@@ -87,4 +88,25 @@ export async function drainQueue(
     }
   }
   return drained;
+}
+
+export async function queueDepth(
+  client: SQSClient,
+  queueUrl: string,
+): Promise<number> {
+  const { Attributes = {} } = await client.send(
+    new GetQueueAttributesCommand({
+      QueueUrl: queueUrl,
+      AttributeNames: [
+        'ApproximateNumberOfMessages',
+        'ApproximateNumberOfMessagesNotVisible',
+        'ApproximateNumberOfMessagesDelayed',
+      ],
+    }),
+  );
+  return [
+    Attributes.ApproximateNumberOfMessages,
+    Attributes.ApproximateNumberOfMessagesNotVisible,
+    Attributes.ApproximateNumberOfMessagesDelayed,
+  ].reduce((total, value) => total + Number.parseInt(value ?? '0', 10), 0);
 }

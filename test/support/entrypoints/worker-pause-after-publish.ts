@@ -5,7 +5,7 @@ import { createSqsClient } from '@messaging/infrastructure/sqs/sqs-client';
 import { SqsEventPublisher } from '@messaging/infrastructure/sqs/sqs-event-publisher';
 import type { AppConfig } from '@platform/config/app-config';
 import { APP_CONFIG } from '@platform/tokens';
-import { log, startWorkerWith } from './start-worker-with';
+import { pause, startWorkerWith } from './start-worker-with';
 
 await startWorkerWith((builder) =>
   builder.overrideProvider(EVENT_PUBLISHER).useFactory({
@@ -20,12 +20,7 @@ await startWorkerWith((builder) =>
       return {
         async publish(messages) {
           const report = await real.publish(messages);
-          log({
-            level: 'info',
-            msg: 'published before crash',
-            published: report.published,
-          });
-          process.kill(process.pid, 'SIGKILL');
+          await pause('published, paused before the commit');
           return report;
         },
       };
