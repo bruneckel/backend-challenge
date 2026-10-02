@@ -150,6 +150,8 @@ Outras coerências checadas no banco: status `PENDING` nunca é gravado (só exi
 
 ## Persistência e unidade de trabalho
 
+**Por que MikroORM.** É a opção preferencial do enunciado e oferece o que a estratégia transacional precisa sem contornos: `em.transactional` com nível de isolamento explícito, `LockMode.PESSIMISTIC_WRITE` e `PESSIMISTIC_PARTIAL_WRITE` (`SKIP LOCKED`) nativos, `nativeUpdate` com o número de linhas afetadas e migrations programáticas. O spike não encontrou motivo técnico para trocar pelo TypeORM. O ORM é usado de forma deliberadamente explícita: entidades com `defineEntity` (sem decorators, fora do domínio), leituras sem identity map e escritas sem flush implícito, para que cada instrução SQL de uma operação financeira seja visível no código.
+
 - **Records separados do domínio.** Definidos com `defineEntity`, sem decorators, e convertidos por funções explícitas que chamam `rehydrate`.
 - **Leituras sem identity map** (`disableIdentityMap`) e **escritas explícitas** (`insert`, `insertMany`, `nativeUpdate` com versão esperada exigindo 1 linha afetada, `INSERT … ON CONFLICT DO NOTHING` na inbox). Nenhuma entidade gerenciada existe para um flush implícito; há teste para isso.
 - **Unidade de trabalho** (`MikroOrmUnitOfWork`): cada execução usa um fork novo do EntityManager, abre a transação em READ COMMITTED e aplica `lock_timeout` local à transação (`set_config(..., true)`). Execução aninhada é recusada por uma guarda com `AsyncLocalStorage`.
@@ -170,6 +172,18 @@ Um único caminho atende HTTP e SQS (`SubmitWagerTransaction`):
 6. Escritas na ordem: transação (com o saldo observado) → wallet com versão esperada → lançamento → eventos na outbox → inbox marcada como processada.
 
 Uma violação de UNIQUE na inserção (corrida com a mesma key em outra wallet) refaz a unidade de trabalho uma vez, e a segunda execução resolve como replay ou conflito. Deadlock refaz no máximo duas vezes, com jitter. `lock_timeout` não é refeito dentro do processo (vira 503 ou backoff do consumidor).
+
+**Por que lock pessimista na wallet, com versão esperada como verificação.** A unidade de concorrência é a wallet, e uma wallet disputada é o caso normal (várias apostas da mesma rodada chegando juntas).
+
+| Estratégia | A favor | Contra | Uso |
+|---|---|---|---|
+| `SELECT … FOR UPDATE` na wallet | serializa por wallet sem tempestade de retries; a wallet disputada vira uma fila; as regras ficam no agregado | a espera ocupa uma conexão; exige `lock_timeout` | **base** |
+| otimista com retry (`version`) | não espera | sob disputa gera retries em cascata, esgotamento e 503 | só como verificação: `UPDATE … WHERE version = :esperada` exigindo 1 linha |
+| update atômico condicional | uma instrução | a regra vai para o SQL e não serializa as checagens de idempotência e de referência | não |
+| SERIALIZABLE | simples de explicar | falhas de serialização sob disputa | não |
+| advisory lock por hash da wallet | — | colisões serializam wallets sem relação | não |
+
+**Por que READ COMMITTED.** Depois de esperar pelo lock, o PostgreSQL devolve a versão já atualizada da linha, e cada instrução seguinte enxerga o que foi confirmado antes dela, inclusive pela transação que segurava o lock. Em REPEATABLE READ, o mesmo cenário termina em `could not serialize access due to concurrent update`. A transação é curta, sem I/O externo, e abrange tudo o que precisa ser atômico: inbox, transação, saldo, lançamento e outbox.
 
 **Ordem global de locks.** Em todas as rotas de escrita (HTTP, SQS, scheduler e falha de pendente), a wallet é travada antes de qualquer linha de transação, e cada unidade de trabalho trava uma única wallet. No SQS, a inbox vem antes da wallet, e nenhuma rota pega a wallet antes da inbox. Não há ciclo possível.
 
@@ -310,6 +324,7 @@ Um REFUND, ROLLBACK (ou WIN/LOSS com referência) cuja referência ainda não ex
 - **Seleção sem lock:** o scheduler do worker busca as pendentes vencidas pelo índice parcial de `next_reference_attempt_at`, em lotes de `REFERENCE_SCHEDULER_BATCH_SIZE`. É seguro porque `wallet_id` é imutável (trigger).
 - **Processamento de cada candidata** (`ProcessPendingReference`): lock da wallet → lock da transação → revalidação de status, wallet e vencimento → mesma `SettlementPolicy` do caminho síncrono → commit. Não há `SKIP LOCKED` nas pendentes: travar a pendente antes da wallet inverteria a ordem global. Dois schedulers na mesma candidata se serializam no lock da wallet; o segundo encontra o estado já atualizado e não gera efeito nem evento.
 - **Limites:** depois da primeira verificação (síncrona), o scheduler verifica de novo até `REFERENCE_MAX_ATTEMPTS` (10) vezes, com backoff de 2 s dobrando até 120 s e jitter (de 5 a 10 minutos no total, no padrão). Se a referência ainda faltar na última → REJECTED (`REFERENCE_NOT_FOUND`, ou `REFERENCE_NOT_PROCESSED` se ela existir mas continuar pendente) e `WagerTransactionRejected`.
+- **Por que esses limites:** entregas fora de ordem vêm de redelivery e de publicação concorrente no provedor, e costumam se resolver em segundos ou poucos minutos. Cinco a dez minutos cobrem esse atraso com folga, sem deixar a operação pendente por tempo indefinido nem martelar o banco (o backoff exponencial espaça as verificações). Os valores são configuráveis, e os testes usam valores curtos.
 - **Falhas:** erro transitório deixa a candidata para a próxima volta sem contar tentativa. Outro erro conta em memória, por transação; na terceira (`REFERENCE_MAX_PROCESSING_FAILURES`), `FailPendingTransaction` grava FAILED `PROCESSING_FAILED` e o evento `WagerTransactionFailed` na mesma transação (lock da wallet e depois da transação, saldo observado mantido).
 - **Único escritor:** nenhuma outra rota grava numa pendente. Um replay apenas lê o estado atual.
 
@@ -335,6 +350,8 @@ Um REFUND, ROLLBACK (ou WIN/LOSS com referência) cuja referência ainda não ex
 | `wallet_lock_wait_seconds` · `outbox_publish_delay_seconds` | histograma | — |
 | `wager_processing_duration_seconds` | histograma | `channel`, `kind`, `outcome` |
 | `http_request_duration_seconds` | histograma | `method`, `route`, `status` |
+
+Famílias exigidas pelo enunciado: transações por status (`wager_transactions_total`), duplicatas detectadas (`idempotency_replays_total`, `inbox_duplicates_total`), retries (`sqs_message_retries_total`, `db_transaction_retries_total`, `outbox_publish_retries_total`, `pending_reference_retries_total`), mensagens em DLQ (`sqs_messages_dead_lettered_total`, `sqs_dlq_approximate_messages`), conflitos de lock (`wallet_lock_timeouts_total`, `wallet_lock_wait_seconds`, `db_deadlocks_total`, `wallet_version_conflicts_total`), outbox lag (`outbox_oldest_pending_age_seconds`, `outbox_pending_events`, `outbox_publish_delay_seconds`) e latência de processamento (`wager_processing_duration_seconds`, `http_request_duration_seconds`).
 
 **Logs:** JSON (pino) com `role`, `instanceId`, e o contexto da requisição ou mensagem (`correlationId`; `messageId` e `sqsMessageId` nas entregas) propagado por `AsyncLocalStorage`. Os logs **nunca** levam valores, saldos, payloads nem `playerId`; o pino ainda censura esses campos como rede de segurança. Requisições HTTP são registradas com método, rota, status e duração, exceto `/health` e `/metrics`.
 
@@ -365,7 +382,7 @@ Num SIGKILL nada disso roda, e a correção vem do banco: a transação aberta s
 
 ## Provas por teste
 
-A suíte (`bun run test`, 799 testes, cerca de 2 minutos) roda contra PostgreSQL e MiniStack reais e passou 10 vezes seguidas sem falha. Cada teste de integração e de concorrência usa um banco criado para ele e filas com prefixo único, e depois de cada cenário um verificador confere, para cada wallet tocada: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo.
+A suíte (`bun run test`, 799 testes, cerca de 2 minutos) roda contra PostgreSQL e MiniStack reais e passou 10 vezes seguidas sem falha. Cada suíte de integração e de concorrência usa um banco criado para ela e filas com prefixo único. **Todo teste que opera o sistema** — pelos casos de uso, pela API HTTP, pelo consumidor, pelo scheduler, pelo publisher ou por processos reais — termina com um verificador que confere, para cada wallet do banco: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo. Só ficam de fora as wallets corrompidas de propósito pelos testes de reconciliação, excluídas pelo nome. Os testes de schema e de repositório montam linhas à mão para exercitar uma constraint ou uma primitiva por vez (por exemplo, um `UPDATE` de saldo sem lançamento), então ficam fora por construção.
 
 | Id | Cenário | Onde |
 |---|---|---|
