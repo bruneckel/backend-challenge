@@ -1,6 +1,8 @@
 import { CanonicalJsonFingerprinter } from '@platform/crypto/canonical-json-fingerprinter';
 import { UuidV7Generator } from '@platform/ids/uuid-v7-generator';
 import type { Clock } from '@shared/application/clock';
+import { type Logger, silentLogger } from '@shared/application/logger';
+import { type Metrics, noopMetrics } from '@shared/application/metrics';
 import type { UnitOfWork } from '@shared/application/unit-of-work';
 import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
@@ -35,10 +37,18 @@ export interface Wagering {
 
 export const START = new Date('2026-10-02T12:00:00.000Z');
 
+export interface Observers {
+  metrics?: Metrics;
+  logger?: Logger;
+}
+
 export function createWagering(
   unitOfWork: UnitOfWork<WageringScope>,
   maxReferenceAttempts = 3,
+  observers: Observers = {},
 ): Wagering {
+  const metrics = observers.metrics ?? noopMetrics;
+  const logger = observers.logger ?? silentLogger;
   const clock = new FixedClock(START);
   const ids = new UuidV7Generator();
   const fingerprinter = new CanonicalJsonFingerprinter();
@@ -59,15 +69,19 @@ export function createWagering(
       clock,
       ids,
       settlement,
+      metrics,
+      logger,
     }),
     processPendingReference: new ProcessPendingReference({
       unitOfWork,
       clock,
       ids,
       settlement,
+      metrics,
+      logger,
     }),
     queries: new WalletQueries({ unitOfWork }),
-    reconcile: new ReconcileWallet({ unitOfWork }),
+    reconcile: new ReconcileWallet({ unitOfWork, metrics, logger }),
   };
 }
 

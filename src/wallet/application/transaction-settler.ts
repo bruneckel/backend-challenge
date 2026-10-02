@@ -1,10 +1,12 @@
 import type { IdGenerator } from '@shared/application/id-generator';
+import type { Metrics } from '@shared/application/metrics';
 import type {
   SettlementOutcome,
   SettlementPolicy,
 } from '@wallet/domain/settlement/settlement-policy';
 import type { WagerTransaction } from '@wallet/domain/transaction/wager-transaction';
 import type { Wallet } from '@wallet/domain/wallet/wallet';
+import { StaleWalletVersionError } from './ports/wallet-repository';
 import type { WageringScope } from './ports/wagering-scope';
 import { type EventOrigin, settlementEvents } from './settlement-events';
 
@@ -19,7 +21,21 @@ export class TransactionSettler {
   constructor(
     private readonly policy: SettlementPolicy,
     private readonly ids: IdGenerator,
+    private readonly metrics: Metrics,
   ) {}
+
+  async lockWallet(
+    scope: WageringScope,
+    walletId: string,
+  ): Promise<Wallet | null> {
+    const started = performance.now();
+    const wallet = await scope.wallets.lockForUpdate(walletId);
+    this.metrics.observe(
+      'wallet_lock_wait_seconds',
+      (performance.now() - started) / 1000,
+    );
+    return wallet;
+  }
 
   async settle(
     scope: WageringScope,
@@ -78,9 +94,24 @@ export class TransactionSettler {
   ): Promise<void> {
     const { wallet, expectedVersion, outcome } = settlement;
     if (outcome.type === 'processed' && outcome.ledgerEntry !== null) {
-      await scope.wallets.applyBalanceChange(wallet, expectedVersion);
+      await this.applyBalanceChange(scope, wallet, expectedVersion);
       await scope.ledger.append(outcome.ledgerEntry);
     }
     await scope.outbox.enqueue(settlementEvents(this.ids, origin, settlement));
+  }
+
+  private async applyBalanceChange(
+    scope: WageringScope,
+    wallet: Wallet,
+    expectedVersion: number,
+  ): Promise<void> {
+    try {
+      await scope.wallets.applyBalanceChange(wallet, expectedVersion);
+    } catch (error) {
+      if (error instanceof StaleWalletVersionError) {
+        this.metrics.increment('wallet_version_conflicts_total');
+      }
+      throw error;
+    }
   }
 }

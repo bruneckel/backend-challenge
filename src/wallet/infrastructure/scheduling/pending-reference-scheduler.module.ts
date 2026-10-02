@@ -7,8 +7,9 @@ import {
 } from '@nestjs/common';
 import type { AppConfig } from '@platform/config/app-config';
 import { PollingLoop } from '@platform/lifecycle/polling-loop';
-import { APP_CONFIG, CLOCK } from '@platform/tokens';
+import { APP_CONFIG, CLOCK, LOGGER } from '@platform/tokens';
 import type { Clock } from '@shared/application/clock';
+import type { Logger } from '@shared/application/logger';
 import type { UnitOfWork } from '@shared/application/unit-of-work';
 import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
@@ -29,6 +30,7 @@ export class PendingReferenceSchedulerRunner
   constructor(
     resolve: ResolvePendingReferences,
     @Inject(APP_CONFIG) config: AppConfig,
+    @Inject(LOGGER) logger: Logger,
   ) {
     this.loop = new PollingLoop({
       step: async () =>
@@ -37,14 +39,10 @@ export class PendingReferenceSchedulerRunner
       idleDelayMs: config.reference.schedulerPollIntervalMs,
       errorBackoff: ExponentialBackoff.create({ baseMs: 1000, maxMs: 30_000 }),
       onError: (error, consecutiveFailures) =>
-        process.stderr.write(
-          `${JSON.stringify({
-            level: 'error',
-            msg: 'pending reference scheduler step failed',
-            errorName: error instanceof Error ? error.name : typeof error,
-            consecutiveFailures,
-          })}\n`,
-        ),
+        logger.error('pending reference scheduler step failed', {
+          errorName: error instanceof Error ? error.name : typeof error,
+          consecutiveFailures,
+        }),
     });
   }
 
@@ -60,12 +58,6 @@ export class PendingReferenceSchedulerRunner
 @Module({
   imports: [WalletModule],
   providers: [
-    {
-      provide: FailPendingTransaction,
-      useFactory: (unitOfWork: UnitOfWork<WageringScope>, clock: Clock) =>
-        new FailPendingTransaction({ unitOfWork, clock }),
-      inject: [WAGERING_UNIT_OF_WORK, CLOCK],
-    },
     {
       provide: ResolvePendingReferences,
       useFactory: (

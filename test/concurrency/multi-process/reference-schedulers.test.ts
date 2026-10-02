@@ -6,7 +6,13 @@ import {
   type PersistenceHarness,
   createPersistenceHarness,
 } from '@test/support/persistence';
+import type { SQSClient } from '@aws-sdk/client-sqs';
 import { startWorkerProcess } from '@test/support/processes';
+import {
+  type TestQueues,
+  createTestQueues,
+  createTestSqsClient,
+} from '@test/support/sqs';
 import {
   type Wagering,
   createWagering,
@@ -16,15 +22,21 @@ import { WagerTransactionKind } from '@wallet/domain/transaction/wager-transacti
 
 let harness: PersistenceHarness;
 let wagering: Wagering;
+let sqs: SQSClient;
+let queues: TestQueues;
 const { Bet, Win, Refund, Rollback } = WagerTransactionKind;
 
 beforeAll(async () => {
   harness = await createPersistenceHarness();
   wagering = createWagering(harness.unitOfWork, 3);
   wagering.clock.set(new Date('2026-01-01T00:00:00.000Z'));
+  sqs = createTestSqsClient();
+  queues = await createTestQueues(sqs);
 });
 
 afterAll(async () => {
+  await queues.delete();
+  sqs.destroy();
   await harness.close();
 });
 
@@ -50,6 +62,7 @@ describe('C7 on two worker processes', () => {
     );
     const environment = {
       DATABASE_URL: harness.database.url,
+      ...queues.environment,
       OUTBOX_PUBLISHER_ENABLED: 'false',
       CONSUMER_ENABLED: 'false',
       REFERENCE_MAX_ATTEMPTS: '3',

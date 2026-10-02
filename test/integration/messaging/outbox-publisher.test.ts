@@ -9,6 +9,7 @@ import { MikroOrmUnitOfWork } from '@platform/database/mikro-orm-unit-of-work';
 import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
 import { commandFor } from '@test/support/commands';
 import { insertRow } from '@test/support/database';
+import { RecordingMetrics } from '@test/support/recording-metrics';
 import {
   type PersistenceHarness,
   createPersistenceHarness,
@@ -34,6 +35,7 @@ let harness: PersistenceHarness;
 let wagering: Wagering;
 let sqs: SQSClient;
 let queues: TestQueues;
+let metrics: RecordingMetrics;
 
 const PUBLISH_AT = new Date(START.getTime() + 60_000);
 const retryBackoff = ExponentialBackoff.create({
@@ -47,6 +49,7 @@ beforeEach(async () => {
   wagering = createWagering(harness.unitOfWork);
   sqs = createTestSqsClient();
   queues = await createTestQueues(sqs);
+  metrics = new RecordingMetrics();
 });
 
 afterEach(async () => {
@@ -68,6 +71,7 @@ function publishing(
     clock: new FixedClock(at),
     retryBackoff,
     batchSize,
+    metrics,
   });
 }
 
@@ -139,6 +143,10 @@ describe('PublishOutboxBatch with SQS', () => {
       next_attempt_at: new Date(PUBLISH_AT.getTime() + 1000),
     });
     expect(row.last_error).toContain('InvalidMessageContents');
+    expect(metrics.count('outbox_publish_retries_total')).toBe(1);
+    expect(metrics.observed('outbox_publish_delay_seconds')).toEqual([
+      60, 60, 60, 60,
+    ]);
     expect(await drainQueue(sqs, queues.urls.events)).toHaveLength(4);
   });
 

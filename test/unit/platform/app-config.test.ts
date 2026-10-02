@@ -57,6 +57,11 @@ describe('loadConfig', () => {
         consumerEnabled: true,
         schedulerEnabled: true,
       },
+      observability: {
+        logLevel: 'info',
+        metricsSampleIntervalMs: 5000,
+        readinessCacheMs: 2000,
+      },
     });
   });
 
@@ -100,6 +105,9 @@ describe('loadConfig', () => {
       REFERENCE_SCHEDULER_BATCH_SIZE: '7',
       REFERENCE_SCHEDULER_POLL_INTERVAL_MS: '25',
       REFERENCE_MAX_PROCESSING_FAILURES: '2',
+      LOG_LEVEL: 'warn',
+      METRICS_SAMPLE_INTERVAL_MS: '250',
+      READINESS_CACHE_MS: '0',
     });
 
     expect(config).toEqual({
@@ -153,6 +161,11 @@ describe('loadConfig', () => {
         consumerEnabled: false,
         schedulerEnabled: false,
       },
+      observability: {
+        logLevel: 'warn',
+        metricsSampleIntervalMs: 250,
+        readinessCacheMs: 0,
+      },
     });
   });
 
@@ -182,6 +195,7 @@ describe('loadConfig', () => {
       { SQS_RECEIVE_TIMEOUT_MS: '20000' },
       /SQS_RECEIVE_TIMEOUT_MS/,
     ],
+    ['an unknown log level', { LOG_LEVEL: 'loud' }, /LOG_LEVEL/],
     [
       'a heartbeat slower than the visibility timeout',
       { SQS_HEARTBEAT_INTERVAL_MS: '30000' },

@@ -52,6 +52,11 @@ export interface AppConfig {
     consumerEnabled: boolean;
     schedulerEnabled: boolean;
   };
+  observability: {
+    logLevel: string;
+    metricsSampleIntervalMs: number;
+    readinessCacheMs: number;
+  };
 }
 
 export class InvalidConfigurationError extends Error {
@@ -107,6 +112,11 @@ const environmentSchema = z
     REFERENCE_SCHEDULER_BATCH_SIZE: integer(20, 1, 500),
     REFERENCE_SCHEDULER_POLL_INTERVAL_MS: integer(1000, 1),
     REFERENCE_MAX_PROCESSING_FAILURES: integer(3, 1),
+    LOG_LEVEL: z
+      .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+      .default('info'),
+    METRICS_SAMPLE_INTERVAL_MS: integer(5000, 1),
+    READINESS_CACHE_MS: integer(2000, 0),
     AWS_ENDPOINT_URL: z.url().default('http://localhost:4566'),
     AWS_REGION: z
       .string()
@@ -237,6 +247,11 @@ export function loadConfig(
       publisherEnabled: values.OUTBOX_PUBLISHER_ENABLED,
       consumerEnabled: values.CONSUMER_ENABLED,
       schedulerEnabled: values.REFERENCE_SCHEDULER_ENABLED,
+    },
+    observability: {
+      logLevel: values.LOG_LEVEL,
+      metricsSampleIntervalMs: values.METRICS_SAMPLE_INTERVAL_MS,
+      readinessCacheMs: values.READINESS_CACHE_MS,
     },
   };
 }

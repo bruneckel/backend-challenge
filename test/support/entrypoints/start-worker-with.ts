@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import type { AddressInfo } from 'node:net';
+import { compositionFor } from '@app/api-application';
 import { configureHttpApplication } from '@app/http-application';
 import { WorkerModule } from '@app/worker.module';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
@@ -15,8 +16,9 @@ export async function startWorkerWith(
   ) => TestingModuleBuilder,
 ): Promise<void> {
   const config = loadConfig(process.env);
+  const composition = compositionFor('worker', config, {});
   const moduleRef = await override(
-    Test.createTestingModule({ imports: [WorkerModule.forRoot(config)] }),
+    Test.createTestingModule({ imports: [WorkerModule.forRoot(composition)] }),
     config,
   ).compile();
   const app = configureHttpApplication(

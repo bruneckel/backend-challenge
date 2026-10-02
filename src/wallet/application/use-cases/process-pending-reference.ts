@@ -1,5 +1,7 @@
 import type { Clock } from '@shared/application/clock';
 import type { IdGenerator } from '@shared/application/id-generator';
+import type { Logger } from '@shared/application/logger';
+import type { Metrics } from '@shared/application/metrics';
 import type { UnitOfWork } from '@shared/application/unit-of-work';
 import type { PendingReferenceCandidate } from '@wallet/application/ports/wager-transaction-repository';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
@@ -23,6 +25,8 @@ export interface ProcessPendingReferenceDependencies {
   clock: Clock;
   ids: IdGenerator;
   settlement: SettlementPolicy;
+  metrics: Metrics;
+  logger: Logger;
 }
 
 const OUTCOMES: Record<SettlementOutcome['type'], PendingReferenceOutcome> = {
@@ -35,14 +39,19 @@ export class ProcessPendingReference {
   private readonly settler: TransactionSettler;
 
   constructor(private readonly deps: ProcessPendingReferenceDependencies) {
-    this.settler = new TransactionSettler(deps.settlement, deps.ids);
+    this.settler = new TransactionSettler(
+      deps.settlement,
+      deps.ids,
+      deps.metrics,
+    );
   }
 
-  execute(
+  async execute(
     candidate: PendingReferenceCandidate,
   ): Promise<PendingReferenceOutcome> {
-    return this.deps.unitOfWork.run(async (scope) => {
-      const wallet = await scope.wallets.lockForUpdate(candidate.walletId);
+    let settled: WagerTransaction | undefined;
+    const outcome = await this.deps.unitOfWork.run(async (scope) => {
+      const wallet = await this.settler.lockWallet(scope, candidate.walletId);
       if (wallet === null) {
         return 'skipped';
       }
@@ -64,8 +73,42 @@ export class ProcessPendingReference {
         causationId: transaction.id,
         occurredAt: at,
       });
+      settled = transaction;
       return OUTCOMES[settlement.outcome.type];
     });
+    if (settled !== undefined) {
+      this.record(outcome, settled);
+    }
+    return outcome;
+  }
+
+  private record(
+    outcome: PendingReferenceOutcome,
+    transaction: WagerTransaction,
+  ): void {
+    const fields = {
+      channel: 'worker',
+      transactionId: transaction.id,
+      walletId: transaction.walletId,
+      providerId: transaction.providerId,
+      kind: transaction.kind,
+      status: transaction.status,
+      failureCode: transaction.failureCode,
+    };
+    if (outcome === 'still_pending') {
+      this.deps.metrics.increment('pending_reference_retries_total');
+      this.deps.logger.info('reference still missing', {
+        ...fields,
+        attempt: transaction.referenceAttempts,
+      });
+      return;
+    }
+    this.deps.metrics.increment('wager_transactions_total', {
+      kind: transaction.kind,
+      status: transaction.status,
+      channel: 'worker',
+    });
+    this.deps.logger.info('waiting wager transaction settled', fields);
   }
 }
 

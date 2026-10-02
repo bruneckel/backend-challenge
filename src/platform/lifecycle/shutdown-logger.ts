@@ -1,10 +1,12 @@
-import { Injectable, type OnApplicationShutdown } from '@nestjs/common';
+import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common';
+import { LOGGER } from '@platform/tokens';
+import type { Logger } from '@shared/application/logger';
 
 @Injectable()
 export class ShutdownLogger implements OnApplicationShutdown {
+  constructor(@Inject(LOGGER) private readonly logger: Logger) {}
+
   onApplicationShutdown(signal?: string): void {
-    process.stdout.write(
-      `${JSON.stringify({ level: 'info', msg: 'shutdown complete', signal: signal ?? null })}\n`,
-    );
+    this.logger.info('shutdown complete', { signal: signal ?? null });
   }
 }

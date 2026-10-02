@@ -6,14 +6,19 @@ import {
   APP_CONFIG,
   CLOCK,
   ID_GENERATOR,
+  LOGGER,
+  METRICS,
   PAYLOAD_FINGERPRINTER,
 } from '@platform/tokens';
 import type { Clock } from '@shared/application/clock';
 import type { IdGenerator } from '@shared/application/id-generator';
+import type { Logger } from '@shared/application/logger';
+import type { Metrics } from '@shared/application/metrics';
 import type { PayloadFingerprinter } from '@shared/application/payload-fingerprinter';
 import type { UnitOfWork } from '@shared/application/unit-of-work';
 import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
+import { FailPendingTransaction } from '@wallet/application/use-cases/fail-pending-transaction';
 import { OpenWallet } from '@wallet/application/use-cases/open-wallet';
 import { ProcessPendingReference } from '@wallet/application/use-cases/process-pending-reference';
 import { ReconcileWallet } from '@wallet/application/use-cases/reconcile-wallet';
@@ -24,10 +29,13 @@ import { createWageringScope } from './persistence/wagering-scope';
 
 export const WAGERING_UNIT_OF_WORK = Symbol('WAGERING_UNIT_OF_WORK');
 
+type Scoped = UnitOfWork<WageringScope>;
+
 const useCases = [
   OpenWallet,
   SubmitWagerTransaction,
   ProcessPendingReference,
+  FailPendingTransaction,
   WalletQueries,
   ReconcileWallet,
 ];
@@ -36,11 +44,12 @@ const useCases = [
   providers: [
     {
       provide: WAGERING_UNIT_OF_WORK,
-      useFactory: (orm: MikroORM, config: AppConfig) =>
+      useFactory: (orm: MikroORM, config: AppConfig, metrics: Metrics) =>
         new MikroOrmUnitOfWork(orm, createWageringScope, {
           lockTimeoutMs: config.database.lockTimeoutMs,
+          metrics,
         }),
-      inject: [MikroORM, APP_CONFIG],
+      inject: [MikroORM, APP_CONFIG, METRICS],
     },
     {
       provide: SettlementPolicy,
@@ -57,7 +66,7 @@ const useCases = [
     {
       provide: OpenWallet,
       useFactory: (
-        unitOfWork: UnitOfWork<WageringScope>,
+        unitOfWork: Scoped,
         fingerprinter: PayloadFingerprinter,
         clock: Clock,
         ids: IdGenerator,
@@ -72,11 +81,13 @@ const useCases = [
     {
       provide: SubmitWagerTransaction,
       useFactory: (
-        unitOfWork: UnitOfWork<WageringScope>,
+        unitOfWork: Scoped,
         fingerprinter: PayloadFingerprinter,
         clock: Clock,
         ids: IdGenerator,
         settlement: SettlementPolicy,
+        metrics: Metrics,
+        logger: Logger,
       ) =>
         new SubmitWagerTransaction({
           unitOfWork,
@@ -84,6 +95,8 @@ const useCases = [
           clock,
           ids,
           settlement,
+          metrics,
+          logger,
         }),
       inject: [
         WAGERING_UNIT_OF_WORK,
@@ -91,29 +104,57 @@ const useCases = [
         CLOCK,
         ID_GENERATOR,
         SettlementPolicy,
+        METRICS,
+        LOGGER,
       ],
     },
     {
       provide: ProcessPendingReference,
       useFactory: (
-        unitOfWork: UnitOfWork<WageringScope>,
+        unitOfWork: Scoped,
         clock: Clock,
         ids: IdGenerator,
         settlement: SettlementPolicy,
-      ) => new ProcessPendingReference({ unitOfWork, clock, ids, settlement }),
-      inject: [WAGERING_UNIT_OF_WORK, CLOCK, ID_GENERATOR, SettlementPolicy],
+        metrics: Metrics,
+        logger: Logger,
+      ) =>
+        new ProcessPendingReference({
+          unitOfWork,
+          clock,
+          ids,
+          settlement,
+          metrics,
+          logger,
+        }),
+      inject: [
+        WAGERING_UNIT_OF_WORK,
+        CLOCK,
+        ID_GENERATOR,
+        SettlementPolicy,
+        METRICS,
+        LOGGER,
+      ],
+    },
+    {
+      provide: FailPendingTransaction,
+      useFactory: (
+        unitOfWork: Scoped,
+        clock: Clock,
+        metrics: Metrics,
+        logger: Logger,
+      ) => new FailPendingTransaction({ unitOfWork, clock, metrics, logger }),
+      inject: [WAGERING_UNIT_OF_WORK, CLOCK, METRICS, LOGGER],
     },
     {
       provide: WalletQueries,
-      useFactory: (unitOfWork: UnitOfWork<WageringScope>) =>
-        new WalletQueries({ unitOfWork }),
+      useFactory: (unitOfWork: Scoped) => new WalletQueries({ unitOfWork }),
       inject: [WAGERING_UNIT_OF_WORK],
     },
     {
       provide: ReconcileWallet,
-      useFactory: (unitOfWork: UnitOfWork<WageringScope>) =>
-        new ReconcileWallet({ unitOfWork }),
-      inject: [WAGERING_UNIT_OF_WORK],
+      useFactory: (unitOfWork: Scoped, metrics: Metrics, logger: Logger) =>
+        new ReconcileWallet({ unitOfWork, metrics, logger }),
+      inject: [WAGERING_UNIT_OF_WORK, METRICS, LOGGER],
     },
   ],
   exports: [WAGERING_UNIT_OF_WORK, ...useCases],

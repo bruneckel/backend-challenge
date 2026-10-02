@@ -6,6 +6,7 @@ import {
 import type { HttpAdapterHost } from '@nestjs/core';
 import { ApplicationError } from '@shared/application/application-error';
 import type { IdGenerator } from '@shared/application/id-generator';
+import type { Logger } from '@shared/application/logger';
 import { DomainError } from '@shared/domain/domain-error';
 import { ensureCorrelationId } from './correlation';
 import { problemFor } from './problem';
@@ -15,6 +16,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
   constructor(
     private readonly adapterHost: HttpAdapterHost,
     private readonly ids: IdGenerator,
+    private readonly logger: Logger,
   ) {}
 
   catch(error: unknown, host: ArgumentsHost): void {
@@ -28,7 +30,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     );
     const problem = problemFor(error);
     if (problem.code === 'INTERNAL_ERROR') {
-      reportUnexpected(error, correlationId);
+      this.reportUnexpected(error);
     }
     for (const [name, value] of Object.entries(problem.headers ?? {})) {
       httpAdapter.setHeader(response, name, value);
@@ -48,24 +50,18 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       problem.status,
     );
   }
-}
 
-function reportUnexpected(error: unknown, correlationId: string): void {
-  const ours =
-    error instanceof DomainError || error instanceof ApplicationError;
-  const name = error instanceof Error ? error.name : typeof error;
-  const code =
-    typeof error === 'object' && error !== null
-      ? Reflect.get(error, 'code')
-      : undefined;
-  process.stderr.write(
-    `${JSON.stringify({
-      level: 'error',
-      msg: 'unexpected error while handling a request',
-      correlationId,
-      errorName: name,
-      ...(typeof code === 'string' ? { errorCode: code } : {}),
-      ...(ours ? { errorMessage: (error as Error).message } : {}),
-    })}\n`,
-  );
+  private reportUnexpected(error: unknown): void {
+    const ours =
+      error instanceof DomainError || error instanceof ApplicationError;
+    const code =
+      typeof error === 'object' && error !== null
+        ? Reflect.get(error, 'code')
+        : undefined;
+    this.logger.error('unexpected error while handling a request', {
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorCode: typeof code === 'string' ? code : undefined,
+      errorMessage: ours ? (error as Error).message : undefined,
+    });
+  }
 }

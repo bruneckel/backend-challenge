@@ -1,6 +1,6 @@
 import { Controller, Get, Res } from '@nestjs/common';
 import { Public } from '@platform/auth/auth.guard';
-import { DatabaseHealth } from '@platform/database/database-health';
+import { type DependencyChecks, ReadinessChecks } from './readiness-checks';
 import { ReadinessState } from './readiness-state';
 
 interface StatusWriter {
@@ -9,14 +9,14 @@ interface StatusWriter {
 
 export type ReadinessReport =
   | { status: 'shutting_down' }
-  | { status: 'ready' | 'not_ready'; checks: { database: 'up' | 'down' } };
+  | { status: 'ready' | 'not_ready'; checks: DependencyChecks };
 
 @Public()
 @Controller('health')
 export class HealthController {
   constructor(
     private readonly readiness: ReadinessState,
-    private readonly database: DatabaseHealth,
+    private readonly checks: ReadinessChecks,
   ) {}
 
   @Get('live')
@@ -32,13 +32,11 @@ export class HealthController {
       response.status(503);
       return { status: 'shutting_down' };
     }
-    const database = (await this.database.isReachable()) ? 'up' : 'down';
-    if (database === 'down') {
+    const checks = await this.checks.current();
+    const ready = checks.database === 'up' && checks.sqs === 'up';
+    if (!ready) {
       response.status(503);
     }
-    return {
-      status: database === 'up' ? 'ready' : 'not_ready',
-      checks: { database },
-    };
+    return { status: ready ? 'ready' : 'not_ready', checks };
   }
 }

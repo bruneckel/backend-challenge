@@ -33,6 +33,20 @@ function fieldOf(error: unknown, field: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+const LOST_CONNECTION_MESSAGES = [
+  /^Connection terminated/,
+  /^timeout exceeded when trying to connect/,
+  /connection error and is not queryable/,
+];
+
+function isLostConnection(error: unknown): boolean {
+  const message = fieldOf(error, 'message');
+  return (
+    message !== undefined &&
+    LOST_CONNECTION_MESSAGES.some((pattern) => pattern.test(message))
+  );
+}
+
 export function classifyDatabaseError(error: unknown): DatabaseFailure {
   const code = fieldOf(error, 'code');
   const constraint = fieldOf(error, 'constraint');
@@ -49,7 +63,9 @@ export function classifyDatabaseError(error: unknown): DatabaseFailure {
       return { kind: 'restrict_violation' };
   }
   if (code === undefined) {
-    return { kind: 'unknown' };
+    return isLostConnection(error)
+      ? { kind: 'transient', reason: 'connection' }
+      : { kind: 'unknown' };
   }
   const reason =
     TRANSIENT_CODES[code] ?? (code.startsWith('08') ? 'connection' : undefined);

@@ -5,17 +5,28 @@ import {
   createMigratedDatabase,
 } from '@test/support/database';
 import { walletInvariantViolations } from '@test/support/invariants';
+import type { SQSClient } from '@aws-sdk/client-sqs';
 import { type RunningProcess, startApiProcess } from '@test/support/processes';
+import {
+  type TestQueues,
+  createTestQueues,
+  createTestSqsClient,
+} from '@test/support/sqs';
 
 let database: TestDatabase;
 let instances: RunningProcess[];
+let sqs: SQSClient;
+let queues: TestQueues;
 
 beforeAll(async () => {
   database = await createMigratedDatabase();
+  sqs = createTestSqsClient();
+  queues = await createTestQueues(sqs);
   instances = await Promise.all(
     [1, 2, 3].map((number) =>
       startApiProcess({
         DATABASE_URL: database.url,
+        ...queues.environment,
         INSTANCE_ID: `api-${number}`,
         DB_POOL_SIZE: '5',
       }),
@@ -33,6 +44,8 @@ afterAll(async () => {
   for (const { instance } of stopped) {
     expect(instance.output()).toContain('"msg":"shutdown complete"');
   }
+  await queues.delete();
+  sqs.destroy();
   await database.drop();
 }, 60_000);
 

@@ -11,6 +11,7 @@ import {
   createMigratedDatabase,
   insertRow,
 } from '@test/support/database';
+import { RecordingMetrics } from '@test/support/recording-metrics';
 import { walletRow } from '@test/support/schema-rows';
 
 interface RawScope {
@@ -20,6 +21,7 @@ interface RawScope {
 let database: TestDatabase;
 let orm: MikroORM;
 let unitOfWork: MikroOrmUnitOfWork<RawScope>;
+const metrics = new RecordingMetrics();
 
 beforeAll(async () => {
   database = await createMigratedDatabase();
@@ -31,6 +33,7 @@ beforeAll(async () => {
   });
   unitOfWork = new MikroOrmUnitOfWork(orm, (em) => ({ em }), {
     lockTimeoutMs: 200,
+    metrics,
   });
 });
 
@@ -185,6 +188,7 @@ describe('MikroOrmUnitOfWork', () => {
 
     expect(failure).toBeInstanceOf(TransientFailure);
     expect((failure as TransientFailure).reason).toBe('lock_timeout');
+    expect(metrics.count('wallet_lock_timeouts_total')).toBe(1);
   });
 });
 

@@ -1,6 +1,7 @@
 import { type DynamicModule, Global, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { MikroORM } from '@mikro-orm/postgresql';
+import { PrometheusMetrics } from '@observability/metrics/prometheus-metrics';
 import { AuthGuard } from '@platform/auth/auth.guard';
 import { AnonymousProviderIdentity } from '@platform/auth/provider-identity';
 import type { AppConfig } from '@platform/config/app-config';
@@ -14,24 +15,32 @@ import {
   APP_CONFIG,
   CLOCK,
   ID_GENERATOR,
+  LOGGER,
+  METRICS,
   PAYLOAD_FINGERPRINTER,
   PROVIDER_IDENTITY,
 } from '@platform/tokens';
+import type { Logger } from '@shared/application/logger';
 
 export interface PlatformOptions {
   config: AppConfig;
   entities: OrmSettings['entities'];
+  logger: Logger;
+  metrics: PrometheusMetrics;
 }
 
 @Global()
 @Module({})
 export class PlatformModule {
   static forRoot(options: PlatformOptions): DynamicModule {
-    const { config, entities } = options;
+    const { config, entities, logger, metrics } = options;
     return {
       module: PlatformModule,
       providers: [
         { provide: APP_CONFIG, useValue: config },
+        { provide: LOGGER, useValue: logger },
+        { provide: METRICS, useValue: metrics },
+        { provide: PrometheusMetrics, useValue: metrics },
         {
           provide: MikroORM,
           useFactory: () =>
@@ -57,6 +66,9 @@ export class PlatformModule {
       ],
       exports: [
         APP_CONFIG,
+        LOGGER,
+        METRICS,
+        PrometheusMetrics,
         MikroORM,
         DatabaseHealth,
         CLOCK,

@@ -100,6 +100,18 @@ describe('classifyDatabaseError', () => {
     expect(classifyDatabaseError(error)).toEqual(expected);
   });
 
+  test.each([
+    'Connection terminated unexpectedly',
+    'Connection terminated due to connection timeout',
+    'timeout exceeded when trying to connect',
+    'Client has encountered a connection error and is not queryable',
+  ])('treats the driver error %p as a lost connection', (message) => {
+    expect(classifyDatabaseError(new Error(message))).toEqual({
+      kind: 'transient',
+      reason: 'connection',
+    });
+  });
+
   test('keeps the constraint undefined when the driver does not name it', () => {
     expect(classifyDatabaseError({ code: '23505' })).toEqual({
       kind: 'unique_violation',

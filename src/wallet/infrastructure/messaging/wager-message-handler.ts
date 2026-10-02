@@ -1,11 +1,13 @@
 import { inboxMessagePayload } from '@messaging/application/inbound-message';
 import { InboxMessage } from '@messaging/domain/inbox-message';
+import { withLogContext } from '@observability/logger/log-context';
 import type {
   ConsumedMessage,
   Disposition,
 } from '@messaging/infrastructure/sqs/message-batch-consumer';
 import type { Clock } from '@shared/application/clock';
 import type { PayloadFingerprinter } from '@shared/application/payload-fingerprinter';
+import { TransientFailure } from '@shared/application/transient-failure';
 import type { ExponentialBackoff } from '@shared/domain/exponential-backoff';
 import type {
   SubmitWagerTransaction,
@@ -35,6 +37,20 @@ export class WagerMessageHandler {
     if (request === undefined) {
       return { action: 'dead_letter', reason: 'INVALID_MESSAGE' };
     }
+    return withLogContext(
+      {
+        sqsMessageId: message.sqsMessageId,
+        messageId: request.messageId,
+        correlationId: request.messageId,
+      },
+      () => this.dispose(message, request),
+    );
+  };
+
+  private async dispose(
+    message: ConsumedMessage,
+    request: WagerTransactionRequested,
+  ): Promise<Disposition> {
     try {
       await this.deps.submit.executeDelivery(
         commandFrom(request),
@@ -69,10 +85,11 @@ export class WagerMessageHandler {
         delaySeconds: Math.ceil(
           this.deps.retryBackoff.delayFor(message.receiveCount) / 1000,
         ),
+        reason: error instanceof TransientFailure ? error.reason : 'unexpected',
         pauseConsumer: failure.pauseConsumer,
       };
     }
-  };
+  }
 }
 
 function parseRequest(body: string): WagerTransactionRequested | undefined {

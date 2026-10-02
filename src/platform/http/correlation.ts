@@ -1,4 +1,5 @@
 import { type ExecutionContext, createParamDecorator } from '@nestjs/common';
+import { withLogContext } from '@observability/logger/log-context';
 import type { IdGenerator } from '@shared/application/id-generator';
 
 export const CORRELATION_HEADER = 'x-correlation-id';
@@ -20,8 +21,8 @@ export function correlationMiddleware(ids: IdGenerator) {
     response: HeaderWriter,
     next: () => void,
   ): void => {
-    ensureCorrelationId(request, response, ids);
-    next();
+    const correlationId = ensureCorrelationId(request, response, ids);
+    withLogContext({ correlationId }, next);
   };
 }
 

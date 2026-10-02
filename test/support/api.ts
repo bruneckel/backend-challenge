@@ -1,7 +1,9 @@
 import type { INestApplication } from '@nestjs/common';
 import { createApiApplication } from '@app/api-application';
 import { loadConfig } from '@platform/config/app-config';
+import { type Logger, silentLogger } from '@shared/application/logger';
 import { type TestDatabase, createMigratedDatabase } from './database';
+import { createTestQueues, createTestSqsClient } from './sqs';
 
 export interface ApiResponse {
   status: number;
@@ -56,14 +58,18 @@ export async function requestApi(
 
 export async function startApi(
   environment: Record<string, string> = {},
+  logger: Logger = silentLogger,
 ): Promise<ApiHarness> {
   const database = await createMigratedDatabase();
+  const sqs = createTestSqsClient();
+  const queues = await createTestQueues(sqs);
   const config = loadConfig({
     DATABASE_URL: database.url,
     PORT: '0',
+    ...queues.environment,
     ...environment,
   });
-  const app = await createApiApplication(config, { logger: false });
+  const app = await createApiApplication(config, { logger });
   await app.listen(0, '127.0.0.1');
   const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
   return {
@@ -74,6 +80,8 @@ export async function startApi(
       requestApi(baseUrl, method, path, options),
     async close() {
       await app.close();
+      await queues.delete();
+      sqs.destroy();
       await database.drop();
     },
   };

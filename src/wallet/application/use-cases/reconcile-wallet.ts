@@ -1,3 +1,5 @@
+import type { Logger } from '@shared/application/logger';
+import type { Metrics } from '@shared/application/metrics';
 import type { UnitOfWork } from '@shared/application/unit-of-work';
 import { WalletNotFoundError } from '@wallet/application/errors';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
@@ -14,6 +16,8 @@ export interface ReconciliationReport {
 
 export interface ReconcileWalletDependencies {
   unitOfWork: UnitOfWork<WageringScope>;
+  metrics: Metrics;
+  logger: Logger;
 }
 
 export class ReconcileWallet {
@@ -28,12 +32,23 @@ export class ReconcileWallet {
     }
     const calculated = snapshot.credits.subtract(snapshot.debits);
     const difference = snapshot.storedBalance.subtract(calculated);
+    const consistent = difference.isZero();
+    this.deps.metrics.increment('wallet_reconciliations_total', {
+      result: consistent ? 'consistent' : 'divergent',
+    });
+    if (!consistent) {
+      this.deps.metrics.increment('wallet_reconciliation_divergences_total');
+      this.deps.logger.error('wallet balance diverges from its ledger', {
+        walletId,
+        checkedEntries: snapshot.entries,
+      });
+    }
     return {
       walletId,
       storedBalance: snapshot.storedBalance.toJSON(),
       calculatedBalance: calculated.toJSON(),
       difference: difference.toJSON(),
-      consistent: difference.isZero(),
+      consistent,
       checkedEntries: snapshot.entries,
     };
   }

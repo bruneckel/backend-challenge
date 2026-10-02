@@ -26,7 +26,7 @@ describe('health endpoints', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       status: 'ready',
-      checks: { database: 'up' },
+      checks: { database: 'up', sqs: 'up' },
     });
   });
 
@@ -37,5 +37,24 @@ describe('health endpoints', () => {
 
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ status: 'shutting_down' });
+  });
+
+  test('GET /health/ready answers 503 when SQS cannot be reached', async () => {
+    const unreachable = await startApi({
+      AWS_ENDPOINT_URL: 'http://127.0.0.1:9',
+      READINESS_CACHE_MS: '0',
+    });
+
+    try {
+      const response = await unreachable.request('GET', '/health/ready');
+
+      expect(response.status).toBe(503);
+      expect(response.body).toEqual({
+        status: 'not_ready',
+        checks: { database: 'up', sqs: 'down' },
+      });
+    } finally {
+      await unreachable.close();
+    }
   });
 });

@@ -14,8 +14,10 @@ import { PublishOutboxBatch } from '@messaging/application/publish-outbox-batch'
 import type { AppConfig } from '@platform/config/app-config';
 import { MikroOrmUnitOfWork } from '@platform/database/mikro-orm-unit-of-work';
 import { PollingLoop } from '@platform/lifecycle/polling-loop';
-import { APP_CONFIG, CLOCK } from '@platform/tokens';
+import { APP_CONFIG, CLOCK, LOGGER, METRICS } from '@platform/tokens';
 import type { Clock } from '@shared/application/clock';
+import type { Logger } from '@shared/application/logger';
+import type { Metrics } from '@shared/application/metrics';
 import type { UnitOfWork } from '@shared/application/unit-of-work';
 import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
 import { createOutboxScope } from './persistence/outbox-scope';
@@ -47,6 +49,7 @@ export class OutboxPublisherRunner
   constructor(
     publishBatch: PublishOutboxBatch,
     @Inject(APP_CONFIG) config: AppConfig,
+    @Inject(LOGGER) logger: Logger,
   ) {
     this.loop = new PollingLoop({
       step: async () =>
@@ -54,14 +57,10 @@ export class OutboxPublisherRunner
       idleDelayMs: config.outbox.pollIntervalMs,
       errorBackoff: ExponentialBackoff.create({ baseMs: 500, maxMs: 30_000 }),
       onError: (error, consecutiveFailures) =>
-        process.stderr.write(
-          `${JSON.stringify({
-            level: 'error',
-            msg: 'outbox publisher step failed',
-            errorName: error instanceof Error ? error.name : typeof error,
-            consecutiveFailures,
-          })}\n`,
-        ),
+        logger.error('outbox publisher step failed', {
+          errorName: error instanceof Error ? error.name : typeof error,
+          consecutiveFailures,
+        }),
     });
   }
 
@@ -96,11 +95,12 @@ export class OutboxPublisherRunner
     },
     {
       provide: OUTBOX_UNIT_OF_WORK,
-      useFactory: (orm: MikroORM, config: AppConfig) =>
+      useFactory: (orm: MikroORM, config: AppConfig, metrics: Metrics) =>
         new MikroOrmUnitOfWork(orm, createOutboxScope, {
           lockTimeoutMs: config.database.lockTimeoutMs,
+          metrics,
         }),
-      inject: [MikroORM, APP_CONFIG],
+      inject: [MikroORM, APP_CONFIG, METRICS],
     },
     {
       provide: PublishOutboxBatch,
@@ -109,6 +109,7 @@ export class OutboxPublisherRunner
         publisher: EventPublisher,
         clock: Clock,
         config: AppConfig,
+        metrics: Metrics,
       ) =>
         new PublishOutboxBatch({
           unitOfWork,
@@ -119,8 +120,15 @@ export class OutboxPublisherRunner
             maxMs: config.outbox.retryMaxMs,
           }),
           batchSize: config.outbox.batchSize,
+          metrics,
         }),
-      inject: [OUTBOX_UNIT_OF_WORK, EVENT_PUBLISHER, CLOCK, APP_CONFIG],
+      inject: [
+        OUTBOX_UNIT_OF_WORK,
+        EVENT_PUBLISHER,
+        CLOCK,
+        APP_CONFIG,
+        METRICS,
+      ],
     },
     OutboxPublisherRunner,
   ],

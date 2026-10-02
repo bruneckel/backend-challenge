@@ -15,8 +15,16 @@ import { lazyQueueUrl } from '@messaging/infrastructure/sqs/queue-provisioning';
 import { createSqsClient } from '@messaging/infrastructure/sqs/sqs-client';
 import type { AppConfig } from '@platform/config/app-config';
 import { PollingLoop } from '@platform/lifecycle/polling-loop';
-import { APP_CONFIG, CLOCK, PAYLOAD_FINGERPRINTER } from '@platform/tokens';
+import {
+  APP_CONFIG,
+  CLOCK,
+  LOGGER,
+  METRICS,
+  PAYLOAD_FINGERPRINTER,
+} from '@platform/tokens';
 import type { Clock } from '@shared/application/clock';
+import type { Logger } from '@shared/application/logger';
+import type { Metrics } from '@shared/application/metrics';
 import type { PayloadFingerprinter } from '@shared/application/payload-fingerprinter';
 import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
 import { SubmitWagerTransaction } from '@wallet/application/use-cases/submit-wager-transaction';
@@ -25,50 +33,57 @@ import { WagerMessageHandler } from './wager-message-handler';
 
 export const CONSUMER_SQS_CLIENT = Symbol('CONSUMER_SQS_CLIENT');
 
-const log = (entry: Record<string, unknown>) =>
-  process.stdout.write(`${JSON.stringify(entry)}\n`);
-
 function errorName(error: unknown): string {
   return error instanceof Error ? error.name : typeof error;
 }
 
-function logConsumerEvent(event: ConsumerEvent): void {
-  switch (event.type) {
-    case 'handled':
-      if (event.disposition.action === 'dead_letter') {
-        log({
-          level: 'warn',
-          msg: 'message sent to the dead-letter queue',
-          sqsMessageId: event.message.sqsMessageId,
-          reason: event.disposition.reason,
+export function observeConsumerEvents(
+  logger: Logger,
+  metrics: Metrics,
+): (event: ConsumerEvent) => void {
+  return (event) => {
+    switch (event.type) {
+      case 'handled':
+        if (event.disposition.action === 'retry') {
+          const reason = event.disposition.reason ?? 'unexpected';
+          metrics.increment('sqs_message_retries_total', { reason });
+          logger.warn('message will be retried', {
+            sqsMessageId: event.message.sqsMessageId,
+            attempt: event.message.receiveCount,
+            delaySeconds: event.disposition.delaySeconds,
+            reason,
+          });
+        }
+        return;
+      case 'dead_lettered':
+        metrics.increment('sqs_messages_dead_lettered_total', {
+          reason: event.reason,
         });
-      } else if (event.disposition.action === 'retry') {
-        log({
-          level: 'warn',
-          msg: 'message will be retried',
+        logger.warn('message moved to the dead-letter queue', {
           sqsMessageId: event.message.sqsMessageId,
-          receiveCount: event.message.receiveCount,
-          delaySeconds: event.disposition.delaySeconds,
+          attempt: event.message.receiveCount,
+          reason: event.reason,
         });
-      }
-      return;
-    case 'handler_failed':
-    case 'dead_letter_failed':
-      log({
-        level: 'error',
-        msg: event.type.replace('_', ' '),
-        sqsMessageId: event.message.sqsMessageId,
-        errorName: errorName(event.error),
-      });
-      return;
-    case 'queue_call_failed':
-      log({
-        level: 'error',
-        msg: 'queue call failed',
-        operation: event.operation,
-        errorName: errorName(event.error),
-      });
-  }
+        return;
+      case 'handler_failed':
+        logger.error('message handler failed', {
+          sqsMessageId: event.message.sqsMessageId,
+          errorName: errorName(event.error),
+        });
+        return;
+      case 'dead_letter_failed':
+        logger.error('dead-letter queue refused the message', {
+          sqsMessageId: event.message.sqsMessageId,
+          errorName: errorName(event.error),
+        });
+        return;
+      case 'queue_call_failed':
+        logger.error('queue call failed', {
+          operation: event.operation,
+          errorName: errorName(event.error),
+        });
+    }
+  };
 }
 
 @Injectable()
@@ -88,15 +103,13 @@ export class WagerConsumerRunner
 {
   private readonly loop: PollingLoop;
 
-  constructor(consumer: MessageBatchConsumer) {
+  constructor(consumer: MessageBatchConsumer, @Inject(LOGGER) logger: Logger) {
     this.loop = new PollingLoop({
       step: async (signal) => (await consumer.consumeOnce(signal)) > 0,
       idleDelayMs: 0,
       errorBackoff: ExponentialBackoff.create({ baseMs: 1000, maxMs: 30_000 }),
       onError: (error, consecutiveFailures) =>
-        log({
-          level: 'error',
-          msg: 'wager consumer paused',
+        logger.error('wager consumer paused', {
           errorName: errorName(error),
           consecutiveFailures,
         }),
@@ -156,6 +169,8 @@ export class WagerConsumerRunner
         client: SQSClient,
         handler: WagerMessageHandler,
         config: AppConfig,
+        logger: Logger,
+        metrics: Metrics,
       ) =>
         new MessageBatchConsumer({
           client,
@@ -168,9 +183,15 @@ export class WagerConsumerRunner
           visibilityTimeoutSeconds: config.consumer.visibilityTimeoutSeconds,
           heartbeatIntervalMs: config.consumer.heartbeatIntervalMs,
           maxConcurrentGroups: config.consumer.maxConcurrentGroups,
-          onEvent: logConsumerEvent,
+          onEvent: observeConsumerEvents(logger, metrics),
         }),
-      inject: [CONSUMER_SQS_CLIENT, WagerMessageHandler, APP_CONFIG],
+      inject: [
+        CONSUMER_SQS_CLIENT,
+        WagerMessageHandler,
+        APP_CONFIG,
+        LOGGER,
+        METRICS,
+      ],
     },
     WagerConsumerRunner,
   ],

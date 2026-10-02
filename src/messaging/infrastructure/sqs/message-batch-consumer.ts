@@ -19,7 +19,12 @@ export interface ConsumedMessage {
 
 export type Disposition =
   | { action: 'acknowledge' }
-  | { action: 'retry'; delaySeconds: number; pauseConsumer?: boolean }
+  | {
+      action: 'retry';
+      delaySeconds: number;
+      reason?: string;
+      pauseConsumer?: boolean;
+    }
   | { action: 'dead_letter'; reason: string; originalMessageId?: string };
 
 export type MessageHandler = (message: ConsumedMessage) => Promise<Disposition>;
@@ -27,6 +32,7 @@ export type MessageHandler = (message: ConsumedMessage) => Promise<Disposition>;
 export type ConsumerEvent =
   | { type: 'handled'; message: ConsumedMessage; disposition: Disposition }
   | { type: 'handler_failed'; message: ConsumedMessage; error: unknown }
+  | { type: 'dead_lettered'; message: ConsumedMessage; reason: string }
   | { type: 'dead_letter_failed'; message: ConsumedMessage; error: unknown }
   | { type: 'queue_call_failed'; operation: string; error: unknown };
 
@@ -195,6 +201,7 @@ export class MessageBatchConsumer {
       );
       return 'holds_group';
     }
+    this.options.onEvent?.({ type: 'dead_lettered', message, reason });
     await this.delete(message);
     return 'settled';
   }

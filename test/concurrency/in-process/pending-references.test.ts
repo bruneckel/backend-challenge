@@ -11,6 +11,8 @@ import {
   createWagering,
   openWalletWith,
 } from '@test/support/wagering';
+import { silentLogger } from '@shared/application/logger';
+import { noopMetrics } from '@shared/application/metrics';
 import { FailPendingTransaction } from '@wallet/application/use-cases/fail-pending-transaction';
 import { ResolvePendingReferences } from '@wallet/application/use-cases/resolve-pending-references';
 import { WagerTransactionKind } from '@wallet/domain/transaction/wager-transaction';
@@ -37,6 +39,8 @@ const scheduler = () =>
     fail: new FailPendingTransaction({
       unitOfWork: harness.unitOfWork,
       clock: wagering.clock,
+      metrics: noopMetrics,
+      logger: silentLogger,
     }),
     batchSize: 5,
     maxProcessingFailures: 3,

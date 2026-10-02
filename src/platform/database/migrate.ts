@@ -1,3 +1,4 @@
+import { PinoLogger } from '@observability/logger/pino-logger';
 import { migrateDown, migrateUp } from './migrator';
 
 const LOCAL_DATABASE_URL =
@@ -5,17 +6,20 @@ const LOCAL_DATABASE_URL =
 
 const command = process.argv[2];
 const databaseUrl = process.env.DATABASE_URL ?? LOCAL_DATABASE_URL;
+const logger = new PinoLogger({ role: 'migrate', instanceId: 'cli' });
 
 if (command === 'up') {
   const applied = await migrateUp(databaseUrl);
-  process.stdout.write(
-    `${JSON.stringify({ level: 'info', msg: 'migrations applied', migrations: applied })}\n`,
-  );
+  logger.info('migrations applied', {
+    count: applied.length,
+    migrations: applied.join(','),
+  });
 } else if (command === 'down') {
   const reverted = await migrateDown(databaseUrl);
-  process.stdout.write(
-    `${JSON.stringify({ level: 'info', msg: 'migrations reverted', migrations: reverted })}\n`,
-  );
+  logger.info('migrations reverted', {
+    count: reverted.length,
+    migrations: reverted.join(','),
+  });
 } else {
   process.stderr.write('usage: bun src/platform/database/migrate.ts up|down\n');
   process.exit(1);
