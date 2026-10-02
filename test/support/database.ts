@@ -1,5 +1,6 @@
 import { SQL } from 'bun';
 import { migrateUp } from '@platform/database/migrator';
+import { rejectionOf } from './async';
 
 export const DATABASE_URL =
   process.env.DATABASE_URL ?? 'postgresql://wagering:wagering@localhost:5432/wagering';
@@ -58,21 +59,16 @@ export function insertRow(sql: SQL, table: string, row: Row): PromiseLike<unknow
   return sql`insert into ${sql(table)} ${sql(row)}`;
 }
 
-async function rejectionOf(write: PromiseLike<unknown>): Promise<Record<string, unknown>> {
-  try {
-    await write;
-  } catch (error) {
-    return error as Record<string, unknown>;
-  }
-  throw new Error('The database accepted a write that it should have rejected');
+async function databaseRejectionOf(write: PromiseLike<unknown>): Promise<Record<string, unknown>> {
+  return (await rejectionOf(write)) as Record<string, unknown>;
 }
 
 export async function violationOf(write: PromiseLike<unknown>): Promise<Violation> {
-  const { errno, constraint } = await rejectionOf(write);
+  const { errno, constraint } = await databaseRejectionOf(write);
   return { sqlState: errno, constraint };
 }
 
 export async function nullViolationOf(write: PromiseLike<unknown>): Promise<NullViolation> {
-  const { errno, column } = await rejectionOf(write);
+  const { errno, column } = await databaseRejectionOf(write);
   return { sqlState: errno, column };
 }
