@@ -1,0 +1,41 @@
+import 'reflect-metadata';
+import type { AddressInfo } from 'node:net';
+import { compositionFor } from '@app/api-application';
+import { configureHttpApplication } from '@app/http-application';
+import { WorkerModule } from '@app/worker.module';
+import { Test, type TestingModuleBuilder } from '@nestjs/testing';
+import { type AppConfig, loadConfig } from '@platform/config/app-config';
+
+export const log = (entry: Record<string, unknown>) =>
+  process.stdout.write(`${JSON.stringify(entry)}\n`);
+
+export async function pause(
+  marker: string,
+  fields: Record<string, unknown> = {},
+): Promise<void> {
+  log({ level: 'info', msg: marker, ...fields });
+  await Bun.sleep(Number.parseInt(process.env.TEST_PAUSE_MS ?? '3000', 10));
+}
+
+export async function startWorkerWith(
+  override: (
+    builder: TestingModuleBuilder,
+    config: AppConfig,
+  ) => TestingModuleBuilder,
+): Promise<void> {
+  const config = loadConfig(process.env);
+  const composition = compositionFor('worker', config, {});
+  const moduleRef = await override(
+    Test.createTestingModule({ imports: [WorkerModule.forRoot(composition)] }),
+    config,
+  ).compile();
+  const app = configureHttpApplication(
+    moduleRef.createNestApplication({ logger: ['error', 'warn'] }),
+  );
+  await app.listen(0, '127.0.0.1');
+  log({
+    level: 'info',
+    msg: 'worker listening',
+    port: (app.getHttpServer().address() as AddressInfo).port,
+  });
+}
