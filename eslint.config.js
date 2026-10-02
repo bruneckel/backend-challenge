@@ -37,6 +37,12 @@ export default defineConfig(
     },
   },
   {
+    files: ['test/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
     files: ['src/**/application/**/*.ts'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [parentRelativeImports, ...layerBoundaryImports] }],

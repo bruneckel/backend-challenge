@@ -23,6 +23,9 @@
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
+      "@app/*": [
+        "./src/app/*"
+      ],
       "@shared/*": [
         "./src/shared/*"
       ],

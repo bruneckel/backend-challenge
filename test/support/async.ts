@@ -14,3 +14,16 @@ export function gate(): { open: () => void; opened: Promise<void> } {
   });
   return { open, opened };
 }
+
+export async function waitUntil(
+  condition: () => Promise<boolean> | boolean,
+  { timeoutMs = 10_000, intervalMs = 50, description = 'condition' } = {},
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await condition())) {
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out after ${timeoutMs} ms waiting for ${description}`);
+    }
+    await Bun.sleep(intervalMs);
+  }
+}
