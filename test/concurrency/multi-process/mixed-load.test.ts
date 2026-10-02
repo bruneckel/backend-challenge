@@ -196,3 +196,49 @@ describe('C4 mixed load on three API and three worker processes', () => {
     expect(new Set(eventIds).size).toBe(outbox.count);
   });
 });
+
+describe('C1 across channels on three API and three worker processes', () => {
+  test('applies the same BET sent 25 times over HTTP and 25 times over SQS exactly once', async () => {
+    const urls = apis.map((api) => api.url);
+    const wallet = await openWalletOverHttp(urls[0]!, '100.00');
+    const bet = operationFor(wallet, 'BET', '10.00');
+    const messageIds: string[] = [];
+
+    const responses = await Promise.all(
+      Array.from({ length: 50 }, async (_, index) => {
+        if (index % 2 === 0) {
+          return submitUntilAnswered([urls[index % urls.length]!], bet);
+        }
+        messageIds.push(await enqueueOperation(sqs, queues.urls.commands, bet));
+        return undefined;
+      }),
+    );
+    await waitForDrain(database.sql, sqs, queues, [bet]);
+
+    const outcome = (await storedOutcomes(database.sql, [bet])).get(
+      bet.idempotencyKey,
+    )!;
+    expect(outcome.status).toBe('PROCESSED');
+    const answers = responses.filter(
+      (response): response is ApiResponse => response !== undefined,
+    );
+    expect(answers).toHaveLength(25);
+    for (const answer of answers) {
+      expect(answer.status).toBe(200);
+      expect(answer.body.transactionId).toBe(outcome.id);
+      expect(answer.body.balance).toEqual({ amount: '90.00', currency: 'BRL' });
+    }
+    expect(
+      answers.filter((answer) => !answer.body.idempotentReplay).length,
+    ).toBeLessThanOrEqual(1);
+    const [inbox] = await database.sql`
+      select count(*)::int as count from inbox_messages where message_id in ${database.sql(messageIds)}`;
+    expect(inbox.count).toBe(25);
+    const [debits] = await database.sql`
+      select count(*)::int as count from wallet_ledger_entries where wallet_id = ${wallet.id} and direction = 'DEBIT'`;
+    expect(debits.count).toBe(1);
+    expect(await walletInvariantViolations(database.sql, wallet.id)).toEqual(
+      [],
+    );
+  });
+});
