@@ -72,6 +72,19 @@ Cada comportamento foi testado numa fila própria, para uma falha não contamina
 
 O processo é iniciado diretamente pelo Bun no `Dockerfile` (forma exec), sem script intermediário que possa interceptar o sinal.
 
+### Compatibilidade com Bun 1.4.2
+
+O Bun 1.4 reescreveu o runtime, e a versão mais recente é a 1.4.2. O mesmo spike rodou num container `oven/bun:1.4.2-alpine`, sem alterar o runtime local:
+
+| Verificação | Resultado |
+|---|---|
+| `bun install --frozen-lockfile` com o lockfile atual | instala sem alterar o lockfile |
+| Os 20 testes de `test/spike` | todos passam |
+| `tsc --noEmit` e `eslint .` | limpos |
+| Imagem da api construída com `--build-arg BUN_VERSION=1.4.2`, parada com SIGTERM | com `--init`, saída 143; como PID 1, saída 0; hook executado nos dois |
+
+O projeto segue no 1.3.14 enquanto o runtime local estiver nessa versão. O `Dockerfile` recebe a versão por `ARG BUN_VERSION`, então adotar a 1.4.2 é trocar um valor e atualizar o Bun local.
+
 ## Decisões em aberto
 
 - **README do enunciado.** O `README.md` atual é o enunciado do desafio. Até a decisão sobre renomeá-lo para `CHALLENGE.md` ou mover a solução para uma subpasta, ele não é alterado, e o código fica na raiz do repositório.
