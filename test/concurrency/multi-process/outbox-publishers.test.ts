@@ -1,11 +1,31 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
 import type { Message, SQSClient } from '@aws-sdk/client-sqs';
 import { waitUntil } from '@test/support/async';
 import { commandFor } from '@test/support/commands';
-import { type PersistenceHarness, createPersistenceHarness } from '@test/support/persistence';
+import {
+  type PersistenceHarness,
+  createPersistenceHarness,
+} from '@test/support/persistence';
 import { spawnProcess, startWorkerProcess } from '@test/support/processes';
-import { type TestQueues, createTestQueues, createTestSqsClient, drainQueue } from '@test/support/sqs';
-import { type Wagering, createWagering, openWalletWith } from '@test/support/wagering';
+import {
+  type TestQueues,
+  createTestQueues,
+  createTestSqsClient,
+  drainQueue,
+} from '@test/support/sqs';
+import {
+  type Wagering,
+  createWagering,
+  openWalletWith,
+} from '@test/support/wagering';
 import { WagerTransactionKind } from '@wallet/domain/transaction/wager-transaction';
 
 let harness: PersistenceHarness;
@@ -48,17 +68,21 @@ const workerEnvironment = (): Record<string, string> => ({
 async function createEvents(wallets: number): Promise<number> {
   for (let index = 0; index < wallets; index += 1) {
     const wallet = await openWalletWith(wagering, '100.00');
-    await wagering.submit.execute(commandFor(wallet, WagerTransactionKind.Bet, '10.00'));
+    await wagering.submit.execute(
+      commandFor(wallet, WagerTransactionKind.Bet, '10.00'),
+    );
   }
   return wallets * 4;
 }
 
 async function pendingEvents(): Promise<number> {
-  const [row] = await harness.database.sql`select count(*)::int as count from outbox_messages where published_at is null`;
+  const [row] = await harness.database
+    .sql`select count(*)::int as count from outbox_messages where published_at is null`;
   return row.count;
 }
 
-const deduplicationIdOf = (message: Message) => message.Attributes?.MessageDeduplicationId;
+const deduplicationIdOf = (message: Message) =>
+  message.Attributes?.MessageDeduplicationId;
 
 function expectEventIdsMatchDeduplicationIds(messages: Message[]): void {
   for (const message of messages) {
@@ -70,11 +94,19 @@ describe('C6 publishers on separate processes', () => {
   test('two worker processes publish every event exactly once on the happy path', async () => {
     const total = await createEvents(20);
     const workers = await Promise.all(
-      [1, 2].map((number) => startWorkerProcess({ ...workerEnvironment(), INSTANCE_ID: `worker-${number}` })),
+      [1, 2].map((number) =>
+        startWorkerProcess({
+          ...workerEnvironment(),
+          INSTANCE_ID: `worker-${number}`,
+        }),
+      ),
     );
 
     try {
-      await waitUntil(async () => (await pendingEvents()) === 0, { timeoutMs: 30_000, description: 'the outbox to drain' });
+      await waitUntil(async () => (await pendingEvents()) === 0, {
+        timeoutMs: 30_000,
+        description: 'the outbox to drain',
+      });
     } finally {
       await Promise.all(workers.map((worker) => worker.stop()));
     }
@@ -91,14 +123,24 @@ describe('C6 publishers on separate processes', () => {
   test('a publisher killed between sending and committing only leaves duplicates with the same event id', async () => {
     const total = await createEvents(5);
 
-    const crashing = spawnProcess('test/support/entrypoints/worker-crash-after-publish.ts', workerEnvironment(), 'crashing-worker');
+    const crashing = spawnProcess(
+      'test/support/entrypoints/worker-crash-after-publish.ts',
+      workerEnvironment(),
+      'crashing-worker',
+    );
     await crashing.exited;
     expect(crashing.output()).toContain('published before crash');
     expect(await pendingEvents()).toBe(total);
 
-    const survivor = await startWorkerProcess({ ...workerEnvironment(), INSTANCE_ID: 'survivor' });
+    const survivor = await startWorkerProcess({
+      ...workerEnvironment(),
+      INSTANCE_ID: 'survivor',
+    });
     try {
-      await waitUntil(async () => (await pendingEvents()) === 0, { timeoutMs: 30_000, description: 'the outbox to drain' });
+      await waitUntil(async () => (await pendingEvents()) === 0, {
+        timeoutMs: 30_000,
+        description: 'the outbox to drain',
+      });
     } finally {
       await survivor.stop();
     }

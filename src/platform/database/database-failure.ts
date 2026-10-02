@@ -51,6 +51,9 @@ export function classifyDatabaseError(error: unknown): DatabaseFailure {
   if (code === undefined) {
     return { kind: 'unknown' };
   }
-  const reason = TRANSIENT_CODES[code] ?? (code.startsWith('08') ? 'connection' : undefined);
-  return reason === undefined ? { kind: 'unknown' } : { kind: 'transient', reason };
+  const reason =
+    TRANSIENT_CODES[code] ?? (code.startsWith('08') ? 'connection' : undefined);
+  return reason === undefined
+    ? { kind: 'unknown' }
+    : { kind: 'transient', reason };
 }

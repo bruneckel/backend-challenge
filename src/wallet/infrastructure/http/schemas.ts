@@ -1,14 +1,14 @@
-import { z } from "zod";
+import { z } from 'zod';
 import {
   PROVIDER_ID,
   moneySchema,
   visibleAscii,
-} from "@wallet/infrastructure/contracts/wager-operation.schema";
+} from '@wallet/infrastructure/contracts/wager-operation.schema';
 
 export {
   type WagerOperationBody,
   wagerOperationSchema,
-} from "@wallet/infrastructure/contracts/wager-operation.schema";
+} from '@wallet/infrastructure/contracts/wager-operation.schema';
 
 export const openWalletSchema = z
   .object({ playerId: z.uuid(), initialBalance: moneySchema })

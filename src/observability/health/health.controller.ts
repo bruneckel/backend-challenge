@@ -25,7 +25,9 @@ export class HealthController {
   }
 
   @Get('ready')
-  async ready(@Res({ passthrough: true }) response: StatusWriter): Promise<ReadinessReport> {
+  async ready(
+    @Res({ passthrough: true }) response: StatusWriter,
+  ): Promise<ReadinessReport> {
     if (this.readiness.isShuttingDown) {
       response.status(503);
       return { status: 'shutting_down' };
@@ -34,6 +36,9 @@ export class HealthController {
     if (database === 'down') {
       response.status(503);
     }
-    return { status: database === 'up' ? 'ready' : 'not_ready', checks: { database } };
+    return {
+      status: database === 'up' ? 'ready' : 'not_ready',
+      checks: { database },
+    };
   }
 }

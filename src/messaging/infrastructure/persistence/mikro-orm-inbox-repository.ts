@@ -1,7 +1,14 @@
 import type { EntityManager } from '@mikro-orm/postgresql';
-import type { InboxRecording, InboxRepository } from '@messaging/application/ports/inbox-repository';
+import type {
+  InboxRecording,
+  InboxRepository,
+} from '@messaging/application/ports/inbox-repository';
 import type { InboxMessage } from '@messaging/domain/inbox-message';
-import { InboxMessageRecord, toInboxMessage, toInboxMessageRow } from './inbox-message-record';
+import {
+  InboxMessageRecord,
+  toInboxMessage,
+  toInboxMessageRow,
+} from './inbox-message-record';
 
 export class MikroOrmInboxRepository implements InboxRepository {
   constructor(private readonly em: EntityManager) {}
@@ -24,11 +31,17 @@ export class MikroOrmInboxRepository implements InboxRepository {
     return { recorded: false, existing: toInboxMessage(existing) };
   }
 
-  async saveProcessed(message: InboxMessage, transactionId: string | undefined): Promise<void> {
+  async saveProcessed(
+    message: InboxMessage,
+    transactionId: string | undefined,
+  ): Promise<void> {
     await this.em.nativeUpdate(
       InboxMessageRecord,
       { consumerName: message.consumerName, messageId: message.messageId },
-      { processedAt: message.processedAt ?? null, transactionId: transactionId ?? null },
+      {
+        processedAt: message.processedAt ?? null,
+        transactionId: transactionId ?? null,
+      },
     );
   }
 }

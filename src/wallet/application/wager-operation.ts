@@ -12,7 +12,9 @@ export interface WagerOperation {
   referenceExternalTransactionId?: string;
 }
 
-export function wagerOperationPayload(operation: WagerOperation): Record<string, unknown> {
+export function wagerOperationPayload(
+  operation: WagerOperation,
+): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     providerId: operation.providerId,
     externalTransactionId: operation.externalTransactionId,
@@ -21,10 +23,14 @@ export function wagerOperationPayload(operation: WagerOperation): Record<string,
     roundId: operation.roundId,
     gameId: operation.gameId,
     kind: operation.kind,
-    money: { amount: operation.money.amount, currency: operation.money.currency },
+    money: {
+      amount: operation.money.amount,
+      currency: operation.money.currency,
+    },
   };
   if (operation.referenceExternalTransactionId !== undefined) {
-    payload.referenceExternalTransactionId = operation.referenceExternalTransactionId;
+    payload.referenceExternalTransactionId =
+      operation.referenceExternalTransactionId;
   }
   return payload;
 }

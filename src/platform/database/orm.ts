@@ -20,8 +20,11 @@ export function createOrm(settings: OrmSettings): Promise<MikroORM> {
     discovery: { warnWhenNoEntities: false },
     pool: { min: 0, max: settings.poolSize ?? DEFAULT_POOL_SIZE },
     driverOptions: {
-      statement_timeout: settings.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS,
-      idle_in_transaction_session_timeout: settings.idleInTransactionTimeoutMs ?? DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+      statement_timeout:
+        settings.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS,
+      idle_in_transaction_session_timeout:
+        settings.idleInTransactionTimeoutMs ??
+        DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT_MS,
       application_name: settings.applicationName ?? 'wagering',
     },
   });

@@ -1,14 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "lib": [
-      "ES2023"
-    ],
+    "lib": ["ES2023"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": [
-      "bun"
-    ],
+    "types": ["bun"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -23,31 +19,14 @@
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
-      "@app/*": [
-        "./src/app/*"
-      ],
-      "@shared/*": [
-        "./src/shared/*"
-      ],
-      "@wallet/*": [
-        "./src/wallet/*"
-      ],
-      "@messaging/*": [
-        "./src/messaging/*"
-      ],
-      "@platform/*": [
-        "./src/platform/*"
-      ],
-      "@observability/*": [
-        "./src/observability/*"
-      ],
-      "@test/*": [
-        "./test/*"
-      ]
+      "@app/*": ["./src/app/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@wallet/*": ["./src/wallet/*"],
+      "@messaging/*": ["./src/messaging/*"],
+      "@platform/*": ["./src/platform/*"],
+      "@observability/*": ["./src/observability/*"],
+      "@test/*": ["./test/*"]
     }
   },
-  "include": [
-    "src",
-    "test"
-  ]
+  "include": ["src", "test"]
 }

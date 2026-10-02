@@ -9,10 +9,17 @@ export class InvalidCursorError extends ApplicationError {
   }
 }
 
-const cursorSchema = z.object({ walletId: z.string(), beforeVersion: z.number().int().min(2) }).strict();
+const cursorSchema = z
+  .object({ walletId: z.string(), beforeVersion: z.number().int().min(2) })
+  .strict();
 
-export function encodeLedgerCursor(walletId: string, beforeVersion: number): string {
-  return Buffer.from(JSON.stringify({ walletId, beforeVersion })).toString('base64url');
+export function encodeLedgerCursor(
+  walletId: string,
+  beforeVersion: number,
+): string {
+  return Buffer.from(JSON.stringify({ walletId, beforeVersion })).toString(
+    'base64url',
+  );
 }
 
 export function decodeLedgerCursor(cursor: string, walletId: string): number {

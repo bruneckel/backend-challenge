@@ -1,11 +1,21 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
 import { MessageIdConflictError } from '@messaging/application/errors';
 import { InboxMessage } from '@messaging/domain/inbox-message';
 import { MikroOrmUnitOfWork } from '@platform/database/mikro-orm-unit-of-work';
 import { gate, rejectionOf } from '@test/support/async';
 import { commandFor as command, referencing } from '@test/support/commands';
 import { walletInvariantViolations } from '@test/support/invariants';
-import { type PersistenceHarness, createPersistenceHarness } from '@test/support/persistence';
+import {
+  type PersistenceHarness,
+  createPersistenceHarness,
+} from '@test/support/persistence';
 import { START, type Wagering, createWagering } from '@test/support/wagering';
 import {
   ExternalTransactionConflictError,
@@ -33,7 +43,9 @@ beforeAll(async () => {
 
 afterEach(async () => {
   for (const walletId of touchedWallets) {
-    expect(await walletInvariantViolations(harness.database.sql, walletId)).toEqual([]);
+    expect(
+      await walletInvariantViolations(harness.database.sql, walletId),
+    ).toEqual([]);
   }
   touchedWallets.clear();
 });
@@ -42,7 +54,10 @@ afterAll(async () => {
   await harness.close();
 });
 
-async function walletWith(amount = '100.00', currency = 'BRL'): Promise<WalletView> {
+async function walletWith(
+  amount = '100.00',
+  currency = 'BRL',
+): Promise<WalletView> {
   const wallet = await wagering.openWallet.execute({
     playerId: Bun.randomUUIDv7(),
     initialBalance: { amount, currency },
@@ -52,7 +67,8 @@ async function walletWith(amount = '100.00', currency = 'BRL'): Promise<WalletVi
   return wallet;
 }
 
-const submit = (input: SubmitWagerTransactionCommand) => wagering.submit.execute(input);
+const submit = (input: SubmitWagerTransactionCommand) =>
+  wagering.submit.execute(input);
 
 async function storedWallet(walletId: string) {
   const [row] = await harness.database.sql`
@@ -86,7 +102,10 @@ describe('SubmitWagerTransaction outcomes', () => {
       balance: { amount: '75.00', currency: 'BRL' },
       idempotentReplay: false,
     });
-    expect(await storedWallet(wallet.id)).toEqual({ balance: '75.00', version: 2 });
+    expect(await storedWallet(wallet.id)).toEqual({
+      balance: '75.00',
+      version: 2,
+    });
     expect(await eventTypes(wallet.id)).toEqual([
       'WagerTransactionProcessed',
       'WalletBalanceChanged',
@@ -115,8 +134,13 @@ describe('SubmitWagerTransaction outcomes', () => {
       balance: { amount: '100.00', currency: 'BRL' },
       idempotentReplay: false,
     });
-    expect(await storedWallet(wallet.id)).toEqual({ balance: '100.00', version: 1 });
-    expect((await eventTypes(wallet.id)).slice(2)).toEqual(['WagerTransactionRejected']);
+    expect(await storedWallet(wallet.id)).toEqual({
+      balance: '100.00',
+      version: 1,
+    });
+    expect((await eventTypes(wallet.id)).slice(2)).toEqual([
+      'WagerTransactionRejected',
+    ]);
   });
 
   test('credits a WIN', async () => {
@@ -124,7 +148,10 @@ describe('SubmitWagerTransaction outcomes', () => {
 
     const result = await submit(command(wallet, Win, '30.00'));
 
-    expect(result).toMatchObject({ status: 'PROCESSED', balance: { amount: '130.00', currency: 'BRL' } });
+    expect(result).toMatchObject({
+      status: 'PROCESSED',
+      balance: { amount: '130.00', currency: 'BRL' },
+    });
   });
 
   test('records a LOSS without moving the balance or writing the ledger', async () => {
@@ -132,9 +159,17 @@ describe('SubmitWagerTransaction outcomes', () => {
 
     const result = await submit(command(wallet, Loss, '0.00'));
 
-    expect(result).toMatchObject({ status: 'PROCESSED', balance: { amount: '100.00', currency: 'BRL' } });
-    expect(await storedWallet(wallet.id)).toEqual({ balance: '100.00', version: 1 });
-    expect((await eventTypes(wallet.id)).slice(2)).toEqual(['WagerTransactionProcessed']);
+    expect(result).toMatchObject({
+      status: 'PROCESSED',
+      balance: { amount: '100.00', currency: 'BRL' },
+    });
+    expect(await storedWallet(wallet.id)).toEqual({
+      balance: '100.00',
+      version: 1,
+    });
+    expect((await eventTypes(wallet.id)).slice(2)).toEqual([
+      'WagerTransactionProcessed',
+    ]);
   });
 
   test('refunds a processed BET and links the reversal to it', async () => {
@@ -144,7 +179,10 @@ describe('SubmitWagerTransaction outcomes', () => {
 
     const result = await submit(referencing(bet, Refund));
 
-    expect(result).toMatchObject({ status: 'PROCESSED', balance: { amount: '100.00', currency: 'BRL' } });
+    expect(result).toMatchObject({
+      status: 'PROCESSED',
+      balance: { amount: '100.00', currency: 'BRL' },
+    });
     const [refund] = await harness.database.sql`
       select reference_transaction_id from wager_transactions where id = ${result.transactionId}`;
     expect(refund.reference_transaction_id).toBe(betResult.transactionId);
@@ -159,7 +197,10 @@ describe('SubmitWagerTransaction outcomes', () => {
 
     const result = await submit(referencing(win, Rollback));
 
-    expect(result).toMatchObject({ status: 'PROCESSED', balance: { amount: '90.00', currency: 'BRL' } });
+    expect(result).toMatchObject({
+      status: 'PROCESSED',
+      balance: { amount: '90.00', currency: 'BRL' },
+    });
   });
 
   test('rejects a second REFUND of the same BET with REFERENCE_ALREADY_REVERSED', async () => {
@@ -170,7 +211,10 @@ describe('SubmitWagerTransaction outcomes', () => {
 
     const result = await submit(referencing(bet, Refund));
 
-    expect(result).toMatchObject({ status: 'REJECTED', failureCode: 'REFERENCE_ALREADY_REVERSED' });
+    expect(result).toMatchObject({
+      status: 'REJECTED',
+      failureCode: 'REFERENCE_ALREADY_REVERSED',
+    });
   });
 
   test('rejects a ROLLBACK that would overdraw the wallet with REVERSAL_INSUFFICIENT_FUNDS', async () => {
@@ -191,24 +235,45 @@ describe('SubmitWagerTransaction outcomes', () => {
   });
 
   test.each([
-    ['another player', 'WALLET_PLAYER_MISMATCH', { playerId: '0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1' }],
-    ['another currency', 'CURRENCY_MISMATCH', { money: { amount: '10.00', currency: 'USD' } }],
-  ] as const)('rejects a BET from %s with %s', async (_, failureCode, overrides) => {
-    const wallet = await walletWith('100.00');
+    [
+      'another player',
+      'WALLET_PLAYER_MISMATCH',
+      { playerId: '0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1' },
+    ],
+    [
+      'another currency',
+      'CURRENCY_MISMATCH',
+      { money: { amount: '10.00', currency: 'USD' } },
+    ],
+  ] as const)(
+    'rejects a BET from %s with %s',
+    async (_, failureCode, overrides) => {
+      const wallet = await walletWith('100.00');
 
-    const result = await submit(command(wallet, Bet, '10.00', overrides));
+      const result = await submit(command(wallet, Bet, '10.00', overrides));
 
-    expect(result).toMatchObject({ status: 'REJECTED', failureCode, balance: { amount: '100.00', currency: 'BRL' } });
-  });
+      expect(result).toMatchObject({
+        status: 'REJECTED',
+        failureCode,
+        balance: { amount: '100.00', currency: 'BRL' },
+      });
+    },
+  );
 
   test('rejects a REFUND of a BET from another round with REFERENCE_MISMATCH', async () => {
     const wallet = await walletWith('100.00');
     const bet = command(wallet, Bet, '10.00');
     await submit(bet);
 
-    const result = await submit({ ...referencing(bet, Refund), roundId: 'round-2' });
+    const result = await submit({
+      ...referencing(bet, Refund),
+      roundId: 'round-2',
+    });
 
-    expect(result).toMatchObject({ status: 'REJECTED', failureCode: 'REFERENCE_MISMATCH' });
+    expect(result).toMatchObject({
+      status: 'REJECTED',
+      failureCode: 'REFERENCE_MISMATCH',
+    });
   });
 
   test('rejects a REFUND of a WIN with INVALID_REFERENCE_KIND', async () => {
@@ -218,7 +283,10 @@ describe('SubmitWagerTransaction outcomes', () => {
 
     const result = await submit(referencing(win, Refund));
 
-    expect(result).toMatchObject({ status: 'REJECTED', failureCode: 'INVALID_REFERENCE_KIND' });
+    expect(result).toMatchObject({
+      status: 'REJECTED',
+      failureCode: 'INVALID_REFERENCE_KIND',
+    });
   });
 
   test('rejects a REFUND for another amount with REFERENCE_AMOUNT_MISMATCH', async () => {
@@ -228,7 +296,10 @@ describe('SubmitWagerTransaction outcomes', () => {
 
     const result = await submit(referencing(bet, Refund, '9.99'));
 
-    expect(result).toMatchObject({ status: 'REJECTED', failureCode: 'REFERENCE_AMOUNT_MISMATCH' });
+    expect(result).toMatchObject({
+      status: 'REJECTED',
+      failureCode: 'REFERENCE_AMOUNT_MISMATCH',
+    });
   });
 
   test('rejects a REFUND of a rejected BET with REFERENCE_NOT_PROCESSED', async () => {
@@ -238,7 +309,10 @@ describe('SubmitWagerTransaction outcomes', () => {
 
     const result = await submit(referencing(bet, Refund));
 
-    expect(result).toMatchObject({ status: 'REJECTED', failureCode: 'REFERENCE_NOT_PROCESSED' });
+    expect(result).toMatchObject({
+      status: 'REJECTED',
+      failureCode: 'REFERENCE_NOT_PROCESSED',
+    });
   });
 
   test('keeps a REFUND that arrives before its BET waiting for the reference', async () => {
@@ -253,10 +327,14 @@ describe('SubmitWagerTransaction outcomes', () => {
       balance: { amount: '100.00', currency: 'BRL' },
       idempotentReplay: false,
     });
-    expect((await eventTypes(wallet.id)).slice(2)).toEqual(['WagerTransactionPendingReference']);
+    expect((await eventTypes(wallet.id)).slice(2)).toEqual([
+      'WagerTransactionPendingReference',
+    ]);
     const [row] = await harness.database.sql`
       select next_reference_attempt_at from wager_transactions where id = ${result.transactionId}`;
-    expect(row.next_reference_attempt_at).toEqual(new Date(START.getTime() + 1000));
+    expect(row.next_reference_attempt_at).toEqual(
+      new Date(START.getTime() + 1000),
+    );
   });
 
   test('keeps a ROLLBACK of a WIN that is itself waiting', async () => {
@@ -300,7 +378,9 @@ describe('SubmitWagerTransaction idempotency', () => {
     await submit(bet);
     const before = await rowCounts(wallet.id);
 
-    const failure = await rejectionOf(submit({ ...bet, money: { amount: '26.00', currency: 'BRL' } }));
+    const failure = await rejectionOf(
+      submit({ ...bet, money: { amount: '26.00', currency: 'BRL' } }),
+    );
 
     expect(failure).toBeInstanceOf(IdempotencyKeyConflictError);
     expect(await rowCounts(wallet.id)).toEqual(before);
@@ -311,7 +391,9 @@ describe('SubmitWagerTransaction idempotency', () => {
     const bet = command(wallet, Bet, '25.00');
     await submit(bet);
 
-    const failure = await rejectionOf(submit({ ...bet, idempotencyKey: 'regenerated-key' }));
+    const failure = await rejectionOf(
+      submit({ ...bet, idempotencyKey: 'regenerated-key' }),
+    );
 
     expect(failure).toBeInstanceOf(ExternalTransactionConflictError);
   });
@@ -319,26 +401,48 @@ describe('SubmitWagerTransaction idempotency', () => {
   test('refuses a transaction for an unknown wallet and writes nothing', async () => {
     const wallet = await walletWith('100.00');
 
-    const failure = await rejectionOf(submit(command(wallet, Bet, '10.00', { walletId: Bun.randomUUIDv7() })));
+    const failure = await rejectionOf(
+      submit(command(wallet, Bet, '10.00', { walletId: Bun.randomUUIDv7() })),
+    );
 
     expect(failure).toBeInstanceOf(WalletNotFoundError);
-    expect(await rowCounts(wallet.id)).toMatchObject({ transactions: 1, entries: 1 });
+    expect(await rowCounts(wallet.id)).toMatchObject({
+      transactions: 1,
+      entries: 1,
+    });
   });
 
   test.each([
-    ['an OPENING', 'UNSUPPORTED_KIND', { kind: WagerTransactionKind.Opening as unknown as SubmittableKind }],
+    [
+      'an OPENING',
+      'UNSUPPORTED_KIND',
+      { kind: WagerTransactionKind.Opening as unknown as SubmittableKind },
+    ],
     ['a REFUND without a reference', 'REFERENCE_REQUIRED', { kind: Refund }],
-    ['a BET with a reference', 'REFERENCE_NOT_ALLOWED', { referenceExternalTransactionId: 'ext-1' }],
-    ['a zero BET', 'INVALID_AMOUNT', { money: { amount: '0.00', currency: 'BRL' } }],
-  ] as const)('refuses %s before touching the database', async (_, code, overrides) => {
-    const wallet = await walletWith('100.00');
+    [
+      'a BET with a reference',
+      'REFERENCE_NOT_ALLOWED',
+      { referenceExternalTransactionId: 'ext-1' },
+    ],
+    [
+      'a zero BET',
+      'INVALID_AMOUNT',
+      { money: { amount: '0.00', currency: 'BRL' } },
+    ],
+  ] as const)(
+    'refuses %s before touching the database',
+    async (_, code, overrides) => {
+      const wallet = await walletWith('100.00');
 
-    const failure = await rejectionOf(submit(command(wallet, Bet, '10.00', overrides)));
+      const failure = await rejectionOf(
+        submit(command(wallet, Bet, '10.00', overrides)),
+      );
 
-    expect(failure).toBeInstanceOf(InvalidWagerTransactionError);
-    expect(failure).toMatchObject({ code });
-    expect(await rowCounts(wallet.id)).toMatchObject({ transactions: 1 });
-  });
+      expect(failure).toBeInstanceOf(InvalidWagerTransactionError);
+      expect(failure).toMatchObject({ code });
+      expect(await rowCounts(wallet.id)).toMatchObject({ transactions: 1 });
+    },
+  );
 
   test('resolves a racing insert of the same key on another wallet as a conflict', async () => {
     const first = await walletWith('100.00');
@@ -360,8 +464,12 @@ describe('SubmitWagerTransaction idempotency', () => {
       { lockTimeoutMs: 5000 },
     );
     const slowSubmit = createWagering(slowUnitOfWork).submit;
-    const winner = command(first, Bet, '10.00', { idempotencyKey: `shared-${Bun.randomUUIDv7()}` });
-    const loser = command(second, Bet, '10.00', { idempotencyKey: winner.idempotencyKey });
+    const winner = command(first, Bet, '10.00', {
+      idempotencyKey: `shared-${Bun.randomUUIDv7()}`,
+    });
+    const loser = command(second, Bet, '10.00', {
+      idempotencyKey: winner.idempotencyKey,
+    });
 
     const winning = slowSubmit.execute(winner);
     await inserted.opened;
@@ -371,7 +479,10 @@ describe('SubmitWagerTransaction idempotency', () => {
 
     expect((await winning).status).toBe('PROCESSED');
     expect(await losing).toBeInstanceOf(IdempotencyKeyConflictError);
-    expect(await rowCounts(second.id)).toMatchObject({ transactions: 1, entries: 1 });
+    expect(await rowCounts(second.id)).toMatchObject({
+      transactions: 1,
+      entries: 1,
+    });
   });
 });
 
@@ -393,22 +504,41 @@ describe('SubmitWagerTransaction atomicity', () => {
     );
     const failingSubmit = createWagering(failingUnitOfWork).submit;
     const bet = command(wallet, Bet, '25.00');
-    const message = InboxMessage.receive({ messageId: Bun.randomUUIDv7(), consumerName: 'wager-commands', payloadHash: 'b'.repeat(64), receivedAt: START });
+    const message = InboxMessage.receive({
+      messageId: Bun.randomUUIDv7(),
+      consumerName: 'wager-commands',
+      payloadHash: 'b'.repeat(64),
+      receivedAt: START,
+    });
     const before = await rowCounts(wallet.id);
 
-    const failure = await rejectionOf(failingSubmit.executeDelivery(bet, message));
+    const failure = await rejectionOf(
+      failingSubmit.executeDelivery(bet, message),
+    );
 
     expect(failure).toMatchObject({ message: 'crash before commit' });
     expect(await rowCounts(wallet.id)).toEqual(before);
-    expect(await storedWallet(wallet.id)).toEqual({ balance: '100.00', version: 1 });
-    const inbox = await harness.database.sql`select 1 from inbox_messages where message_id = ${message.messageId}`;
+    expect(await storedWallet(wallet.id)).toEqual({
+      balance: '100.00',
+      version: 1,
+    });
+    const inbox = await harness.database
+      .sql`select 1 from inbox_messages where message_id = ${message.messageId}`;
     expect(inbox).toHaveLength(0);
   });
 });
 
 describe('SubmitWagerTransaction deliveries', () => {
-  const delivery = (messageId: string = Bun.randomUUIDv7(), payloadHash = 'c'.repeat(64)) =>
-    InboxMessage.receive({ messageId, consumerName: 'wager-commands', payloadHash, receivedAt: START });
+  const delivery = (
+    messageId: string = Bun.randomUUIDv7(),
+    payloadHash = 'c'.repeat(64),
+  ) =>
+    InboxMessage.receive({
+      messageId,
+      consumerName: 'wager-commands',
+      payloadHash,
+      receivedAt: START,
+    });
 
   async function inboxRow(messageId: string) {
     const [row] = await harness.database.sql`
@@ -420,11 +550,18 @@ describe('SubmitWagerTransaction deliveries', () => {
     const wallet = await walletWith('100.00');
     const message = delivery();
 
-    const outcome = await wagering.submit.executeDelivery(command(wallet, Bet, '25.00'), message);
+    const outcome = await wagering.submit.executeDelivery(
+      command(wallet, Bet, '25.00'),
+      message,
+    );
 
     expect(outcome.type).toBe('handled');
-    const transactionId = outcome.type === 'handled' ? outcome.result.transactionId : undefined;
-    expect(await inboxRow(message.messageId)).toEqual({ transaction_id: transactionId, processed_at: START });
+    const transactionId =
+      outcome.type === 'handled' ? outcome.result.transactionId : undefined;
+    expect(await inboxRow(message.messageId)).toEqual({
+      transaction_id: transactionId,
+      processed_at: START,
+    });
   });
 
   test('acknowledges a redelivery of the same message without a second effect', async () => {
@@ -433,23 +570,38 @@ describe('SubmitWagerTransaction deliveries', () => {
     const message = delivery();
     await wagering.submit.executeDelivery(bet, message);
 
-    const outcome = await wagering.submit.executeDelivery(bet, delivery(message.messageId));
+    const outcome = await wagering.submit.executeDelivery(
+      bet,
+      delivery(message.messageId),
+    );
 
     expect(outcome).toEqual({ type: 'duplicate' });
-    expect(await storedWallet(wallet.id)).toEqual({ balance: '75.00', version: 2 });
+    expect(await storedWallet(wallet.id)).toEqual({
+      balance: '75.00',
+      version: 2,
+    });
   });
 
   test('refuses a message id reused with a different payload', async () => {
     const wallet = await walletWith('100.00');
     const message = delivery();
-    await wagering.submit.executeDelivery(command(wallet, Bet, '25.00'), message);
+    await wagering.submit.executeDelivery(
+      command(wallet, Bet, '25.00'),
+      message,
+    );
 
     const failure = await rejectionOf(
-      wagering.submit.executeDelivery(command(wallet, Bet, '30.00'), delivery(message.messageId, 'd'.repeat(64))),
+      wagering.submit.executeDelivery(
+        command(wallet, Bet, '30.00'),
+        delivery(message.messageId, 'd'.repeat(64)),
+      ),
     );
 
     expect(failure).toBeInstanceOf(MessageIdConflictError);
-    expect(await storedWallet(wallet.id)).toEqual({ balance: '75.00', version: 2 });
+    expect(await storedWallet(wallet.id)).toEqual({
+      balance: '75.00',
+      version: 2,
+    });
   });
 
   test('records another message for an operation already applied as a replay', async () => {
@@ -460,7 +612,13 @@ describe('SubmitWagerTransaction deliveries', () => {
 
     const outcome = await wagering.submit.executeDelivery(bet, message);
 
-    expect(outcome).toEqual({ type: 'handled', result: { ...original, idempotentReplay: true } });
-    expect(await inboxRow(message.messageId)).toEqual({ transaction_id: original.transactionId, processed_at: START });
+    expect(outcome).toEqual({
+      type: 'handled',
+      result: { ...original, idempotentReplay: true },
+    });
+    expect(await inboxRow(message.messageId)).toEqual({
+      transaction_id: original.transactionId,
+      processed_at: START,
+    });
   });
 });

@@ -11,19 +11,31 @@ import { Test } from '@nestjs/testing';
 import { type AppConfig, loadConfig } from '@platform/config/app-config';
 import { APP_CONFIG } from '@platform/tokens';
 
-const log = (entry: Record<string, unknown>) => process.stdout.write(`${JSON.stringify(entry)}\n`);
+const log = (entry: Record<string, unknown>) =>
+  process.stdout.write(`${JSON.stringify(entry)}\n`);
 
 const config = loadConfig(process.env);
-const moduleRef = await Test.createTestingModule({ imports: [WorkerModule.forRoot(config)] })
+const moduleRef = await Test.createTestingModule({
+  imports: [WorkerModule.forRoot(config)],
+})
   .overrideProvider(EVENT_PUBLISHER)
   .useFactory({
     factory: (settings: AppConfig): EventPublisher => {
-      const client = createSqsClient(settings.sqs, { requestTimeoutMs: settings.sqs.publishTimeoutMs });
-      const real = new SqsEventPublisher(client, lazyQueueUrl(client, settings.sqs.eventsQueue));
+      const client = createSqsClient(settings.sqs, {
+        requestTimeoutMs: settings.sqs.publishTimeoutMs,
+      });
+      const real = new SqsEventPublisher(
+        client,
+        lazyQueueUrl(client, settings.sqs.eventsQueue),
+      );
       return {
         async publish(messages) {
           const report = await real.publish(messages);
-          log({ level: 'info', msg: 'published before crash', published: report.published });
+          log({
+            level: 'info',
+            msg: 'published before crash',
+            published: report.published,
+          });
           process.kill(process.pid, 'SIGKILL');
           return report;
         },
@@ -32,6 +44,12 @@ const moduleRef = await Test.createTestingModule({ imports: [WorkerModule.forRoo
     inject: [APP_CONFIG],
   })
   .compile();
-const app = configureHttpApplication(moduleRef.createNestApplication({ logger: ['error', 'warn'] }));
+const app = configureHttpApplication(
+  moduleRef.createNestApplication({ logger: ['error', 'warn'] }),
+);
 await app.listen(0, '127.0.0.1');
-log({ level: 'info', msg: 'worker listening', port: (app.getHttpServer().address() as AddressInfo).port });
+log({
+  level: 'info',
+  msg: 'worker listening',
+  port: (app.getHttpServer().address() as AddressInfo).port,
+});

@@ -13,7 +13,11 @@ export class MikroOrmWalletRepository implements WalletRepository {
   constructor(private readonly em: EntityManager) {}
 
   async findById(id: string): Promise<Wallet | null> {
-    const row = await this.em.findOne(WalletRecord, { id }, { disableIdentityMap: true });
+    const row = await this.em.findOne(
+      WalletRecord,
+      { id },
+      { disableIdentityMap: true },
+    );
     return row === null ? null : toWallet(row);
   }
 
@@ -31,14 +35,22 @@ export class MikroOrmWalletRepository implements WalletRepository {
       await this.em.insert(WalletRecord, toWalletRow(wallet));
     } catch (error) {
       const failure = classifyDatabaseError(error);
-      if (failure.kind === 'unique_violation' && failure.constraint === 'wallets_player_currency_key') {
-        throw new WalletAlreadyExistsError(wallet.playerId, wallet.currency, { cause: error });
+      if (
+        failure.kind === 'unique_violation' &&
+        failure.constraint === 'wallets_player_currency_key'
+      ) {
+        throw new WalletAlreadyExistsError(wallet.playerId, wallet.currency, {
+          cause: error,
+        });
       }
       throw error;
     }
   }
 
-  async applyBalanceChange(wallet: Wallet, expectedVersion: number): Promise<void> {
+  async applyBalanceChange(
+    wallet: Wallet,
+    expectedVersion: number,
+  ): Promise<void> {
     const { balanceAmount, version, updatedAt } = toWalletRow(wallet);
     const affected = await this.em.nativeUpdate(
       WalletRecord,

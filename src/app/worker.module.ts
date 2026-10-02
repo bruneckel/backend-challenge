@@ -14,7 +14,10 @@ export class WorkerModule {
     return {
       module: WorkerModule,
       imports: [
-        PlatformModule.forRoot({ config, entities: [...walletEntities, ...messagingEntities] }),
+        PlatformModule.forRoot({
+          config,
+          entities: [...walletEntities, ...messagingEntities],
+        }),
         HealthModule,
         ...(config.worker.publisherEnabled ? [OutboxPublisherModule] : []),
         ...(config.worker.consumerEnabled ? [WagerConsumerModule] : []),

@@ -1,9 +1,20 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rejectionOf } from '@test/support/async';
 import { commandFor, referencing } from '@test/support/commands';
-import { type PersistenceHarness, createPersistenceHarness } from '@test/support/persistence';
-import { START, type Wagering, createWagering, openWalletWith } from '@test/support/wagering';
-import { TransactionNotFoundError, WalletNotFoundError } from '@wallet/application/errors';
+import {
+  type PersistenceHarness,
+  createPersistenceHarness,
+} from '@test/support/persistence';
+import {
+  START,
+  type Wagering,
+  createWagering,
+  openWalletWith,
+} from '@test/support/wagering';
+import {
+  TransactionNotFoundError,
+  WalletNotFoundError,
+} from '@wallet/application/errors';
 import { WagerTransactionKind } from '@wallet/domain/transaction/wager-transaction';
 
 let harness: PersistenceHarness;
@@ -32,7 +43,9 @@ describe('WalletQueries', () => {
   });
 
   test('reports an unknown wallet as not found', async () => {
-    expect(await rejectionOf(wagering.queries.getWallet(Bun.randomUUIDv7()))).toBeInstanceOf(WalletNotFoundError);
+    expect(
+      await rejectionOf(wagering.queries.getWallet(Bun.randomUUIDv7())),
+    ).toBeInstanceOf(WalletNotFoundError);
   });
 
   test('pages the ledger from the newest movement with a cursor for the next page', async () => {
@@ -42,7 +55,10 @@ describe('WalletQueries', () => {
     await wagering.submit.execute(commandFor(wallet, Bet, '1.00'));
 
     const first = await wagering.queries.getLedger(wallet.id, { limit: 2 });
-    const second = await wagering.queries.getLedger(wallet.id, { beforeVersion: first.nextBeforeVersion ?? undefined, limit: 2 });
+    const second = await wagering.queries.getLedger(wallet.id, {
+      beforeVersion: first.nextBeforeVersion ?? undefined,
+      limit: 2,
+    });
 
     expect(first.items.map((item) => item.walletVersion)).toEqual([4, 3]);
     expect(first.nextBeforeVersion).toBe(3);
@@ -61,7 +77,11 @@ describe('WalletQueries', () => {
   });
 
   test('reports the ledger of an unknown wallet as not found', async () => {
-    expect(await rejectionOf(wagering.queries.getLedger(Bun.randomUUIDv7(), { limit: 10 }))).toBeInstanceOf(WalletNotFoundError);
+    expect(
+      await rejectionOf(
+        wagering.queries.getLedger(Bun.randomUUIDv7(), { limit: 10 }),
+      ),
+    ).toBeInstanceOf(WalletNotFoundError);
   });
 
   test('shows a transaction by id and by provider and external id', async () => {
@@ -72,7 +92,10 @@ describe('WalletQueries', () => {
     const refund = await wagering.submit.execute(refundCommand);
 
     const byId = await wagering.queries.getTransaction(refund.transactionId);
-    const byExternalId = await wagering.queries.getTransactionByExternalId('provider-a', refundCommand.externalTransactionId);
+    const byExternalId = await wagering.queries.getTransactionByExternalId(
+      'provider-a',
+      refundCommand.externalTransactionId,
+    );
 
     expect(byId).toEqual({
       transactionId: refund.transactionId,
@@ -95,9 +118,13 @@ describe('WalletQueries', () => {
   });
 
   test('reports an unknown transaction as not found', async () => {
-    expect(await rejectionOf(wagering.queries.getTransaction(Bun.randomUUIDv7()))).toBeInstanceOf(TransactionNotFoundError);
-    expect(await rejectionOf(wagering.queries.getTransactionByExternalId('provider-a', 'missing'))).toBeInstanceOf(
-      TransactionNotFoundError,
-    );
+    expect(
+      await rejectionOf(wagering.queries.getTransaction(Bun.randomUUIDv7())),
+    ).toBeInstanceOf(TransactionNotFoundError);
+    expect(
+      await rejectionOf(
+        wagering.queries.getTransactionByExternalId('provider-a', 'missing'),
+      ),
+    ).toBeInstanceOf(TransactionNotFoundError);
   });
 });

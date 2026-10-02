@@ -1,4 +1,7 @@
-import type { EventContext, IntegrationEvent } from '@messaging/domain/integration-event';
+import type {
+  EventContext,
+  IntegrationEvent,
+} from '@messaging/domain/integration-event';
 import { OutboxMessage } from '@messaging/domain/outbox-message';
 import type { IdGenerator } from '@shared/application/id-generator';
 import { WagerTransactionPendingReference } from '@wallet/domain/events/wager-transaction-pending-reference';
@@ -17,7 +20,11 @@ export interface SettledTransaction {
   outcome: SettlementOutcome;
 }
 
-export function settlementEvents(ids: IdGenerator, origin: EventOrigin, settled: SettledTransaction): OutboxMessage[] {
+export function settlementEvents(
+  ids: IdGenerator,
+  origin: EventOrigin,
+  settled: SettledTransaction,
+): OutboxMessage[] {
   const context = (): EventContext => ({ ...origin, eventId: ids.next() });
   const { transaction, wallet, outcome } = settled;
   const events: IntegrationEvent<unknown>[] = [];
@@ -25,7 +32,9 @@ export function settlementEvents(ids: IdGenerator, origin: EventOrigin, settled:
     case 'processed':
       events.push(WagerTransactionProcessed.from(transaction, context()));
       if (outcome.ledgerEntry !== null) {
-        events.push(WalletBalanceChanged.from(wallet, outcome.ledgerEntry, context()));
+        events.push(
+          WalletBalanceChanged.from(wallet, outcome.ledgerEntry, context()),
+        );
       }
       break;
     case 'rejected':
@@ -33,7 +42,9 @@ export function settlementEvents(ids: IdGenerator, origin: EventOrigin, settled:
       break;
     case 'pending_reference':
       if (outcome.firstTime) {
-        events.push(WagerTransactionPendingReference.from(transaction, context()));
+        events.push(
+          WagerTransactionPendingReference.from(transaction, context()),
+        );
       }
       break;
   }

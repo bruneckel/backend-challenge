@@ -1,9 +1,16 @@
-import { type ArgumentMetadata, Injectable, type PipeTransform } from '@nestjs/common';
+import {
+  type ArgumentMetadata,
+  Injectable,
+  type PipeTransform,
+} from '@nestjs/common';
 import { RequestValidationError } from './request-errors';
 
 @Injectable()
 export class SchemaValidationPipe implements PipeTransform {
-  async transform(value: unknown, metadata: ArgumentMetadata): Promise<unknown> {
+  async transform(
+    value: unknown,
+    metadata: ArgumentMetadata,
+  ): Promise<unknown> {
     const schema = metadata.schema;
     if (schema === undefined) {
       return value;

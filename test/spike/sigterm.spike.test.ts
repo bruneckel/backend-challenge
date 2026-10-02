@@ -26,6 +26,8 @@ describe('API process shutdown', () => {
 
     expect(output).toContain('"msg":"shutdown complete"');
     expect(output).toContain('"signal":"SIGTERM"');
-    expect(exitCode === 0 || exitCode === 143 || child.signalCode === 'SIGTERM').toBe(true);
+    expect(
+      exitCode === 0 || exitCode === 143 || child.signalCode === 'SIGTERM',
+    ).toBe(true);
   });
 });

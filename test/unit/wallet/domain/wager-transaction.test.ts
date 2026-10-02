@@ -45,38 +45,67 @@ describe('WagerTransaction.create', () => {
     const props = transactionProps(Bet, brl('1.00'));
 
     expect(
-      codeOf(() => WagerTransaction.create({ ...props, kind: Opening as unknown as typeof Bet })),
+      codeOf(() =>
+        WagerTransaction.create({
+          ...props,
+          kind: Opening as unknown as typeof Bet,
+        }),
+      ),
     ).toBe('UNSUPPORTED_KIND');
   });
 
-  test.each([Refund, Rollback] as const)('requires a reference for %p', (kind) => {
-    expect(codeOf(() => pendingTransaction(kind, brl('1.00')))).toBe('REFERENCE_REQUIRED');
-  });
+  test.each([Refund, Rollback] as const)(
+    'requires a reference for %p',
+    (kind) => {
+      expect(codeOf(() => pendingTransaction(kind, brl('1.00')))).toBe(
+        'REFERENCE_REQUIRED',
+      );
+    },
+  );
 
   test('refuses a reference on a BET', () => {
     expect(
-      codeOf(() => pendingTransaction(Bet, brl('1.00'), { referenceExternalTransactionId: 'ext-0' })),
+      codeOf(() =>
+        pendingTransaction(Bet, brl('1.00'), {
+          referenceExternalTransactionId: 'ext-0',
+        }),
+      ),
     ).toBe('REFERENCE_NOT_ALLOWED');
   });
 
-  test.each([Win, Loss] as const)('accepts an optional reference on %p', (kind) => {
-    const transaction = pendingTransaction(kind, brl('1.00'), { referenceExternalTransactionId: 'ext-0' });
+  test.each([Win, Loss] as const)(
+    'accepts an optional reference on %p',
+    (kind) => {
+      const transaction = pendingTransaction(kind, brl('1.00'), {
+        referenceExternalTransactionId: 'ext-0',
+      });
 
-    expect(transaction.referenceExternalTransactionId).toBe('ext-0');
-  });
+      expect(transaction.referenceExternalTransactionId).toBe('ext-0');
+    },
+  );
 
-  test.each([Bet, Win, Refund, Rollback] as const)('refuses a zero amount on %p', (kind) => {
-    const reference = kind === Refund || kind === Rollback ? { referenceExternalTransactionId: 'ext-0' } : {};
+  test.each([Bet, Win, Refund, Rollback] as const)(
+    'refuses a zero amount on %p',
+    (kind) => {
+      const reference =
+        kind === Refund || kind === Rollback
+          ? { referenceExternalTransactionId: 'ext-0' }
+          : {};
 
-    expect(codeOf(() => pendingTransaction(kind, brl('0.00'), reference))).toBe('INVALID_AMOUNT');
-  });
+      expect(
+        codeOf(() => pendingTransaction(kind, brl('0.00'), reference)),
+      ).toBe('INVALID_AMOUNT');
+    },
+  );
 
   test('accepts a zero amount on LOSS', () => {
     expect(pendingTransaction(Loss, brl('0.00')).money.isZero()).toBe(true);
   });
 
   test('throws an InvalidWagerTransactionError', () => {
-    expect(() => pendingTransaction(Refund, brl('1.00'))).toThrow(InvalidWagerTransactionError);
+    expect(() => pendingTransaction(Refund, brl('1.00'))).toThrow(
+      InvalidWagerTransactionError,
+    );
   });
 });
 
@@ -136,7 +165,9 @@ describe('WagerTransaction transitions', () => {
   });
 
   test('PENDING to PENDING_REFERENCE schedules the first reference check', () => {
-    const transaction = pendingTransaction(Refund, brl('25.00'), { referenceExternalTransactionId: 'ext-0' });
+    const transaction = pendingTransaction(Refund, brl('25.00'), {
+      referenceExternalTransactionId: 'ext-0',
+    });
 
     transaction.markPendingReference(brl('100.00'), LATER, AT);
 
@@ -148,7 +179,9 @@ describe('WagerTransaction transitions', () => {
   });
 
   test('a pending reference retry increments the attempts without changing the status', () => {
-    const transaction = pendingTransaction(Refund, brl('25.00'), { referenceExternalTransactionId: 'ext-0' });
+    const transaction = pendingTransaction(Refund, brl('25.00'), {
+      referenceExternalTransactionId: 'ext-0',
+    });
     transaction.markPendingReference(brl('100.00'), LATER, AT);
     const nextTry = new Date('2026-10-02T12:10:00.000Z');
 
@@ -161,13 +194,17 @@ describe('WagerTransaction transitions', () => {
 
   test('PENDING_REFERENCE can still be processed, rejected or failed, and clears the schedule', () => {
     const outcomes: Array<(transaction: WagerTransaction) => void> = [
-      (transaction) => transaction.markProcessed('stored-1', brl('125.00'), LATER),
-      (transaction) => transaction.reject(FailureCode.ReferenceNotFound, brl('100.00'), LATER),
+      (transaction) =>
+        transaction.markProcessed('stored-1', brl('125.00'), LATER),
+      (transaction) =>
+        transaction.reject(FailureCode.ReferenceNotFound, brl('100.00'), LATER),
       (transaction) => transaction.fail(FailureCode.ProcessingFailed, LATER),
     ];
 
     for (const finish of outcomes) {
-      const transaction = pendingTransaction(Refund, brl('25.00'), { referenceExternalTransactionId: 'ext-0' });
+      const transaction = pendingTransaction(Refund, brl('25.00'), {
+        referenceExternalTransactionId: 'ext-0',
+      });
       transaction.markPendingReference(brl('100.00'), LATER, AT);
 
       finish(transaction);
@@ -178,7 +215,9 @@ describe('WagerTransaction transitions', () => {
   });
 
   test('records the resolved reference when processed', () => {
-    const transaction = pendingTransaction(Refund, brl('25.00'), { referenceExternalTransactionId: 'ext-0' });
+    const transaction = pendingTransaction(Refund, brl('25.00'), {
+      referenceExternalTransactionId: 'ext-0',
+    });
 
     transaction.markProcessed('stored-1', brl('125.00'), LATER);
 
@@ -188,34 +227,45 @@ describe('WagerTransaction transitions', () => {
   test('refuses a retry schedule on a transaction that is not waiting for its reference', () => {
     const transaction = pendingTransaction(Bet, brl('1.00'));
 
-    expect(() => transaction.scheduleReferenceRetry(LATER, LATER)).toThrow(InvalidTransactionStateError);
+    expect(() => transaction.scheduleReferenceRetry(LATER, LATER)).toThrow(
+      InvalidTransactionStateError,
+    );
   });
 
   test('refuses to mark a waiting transaction as pending again', () => {
-    const transaction = pendingTransaction(Refund, brl('25.00'), { referenceExternalTransactionId: 'ext-0' });
+    const transaction = pendingTransaction(Refund, brl('25.00'), {
+      referenceExternalTransactionId: 'ext-0',
+    });
     transaction.markPendingReference(brl('100.00'), LATER, AT);
 
-    expect(() => transaction.markPendingReference(brl('100.00'), LATER, AT)).toThrow(InvalidTransactionStateError);
+    expect(() =>
+      transaction.markPendingReference(brl('100.00'), LATER, AT),
+    ).toThrow(InvalidTransactionStateError);
   });
 
-  test.each([WagerTransactionStatus.Processed, WagerTransactionStatus.Rejected, WagerTransactionStatus.Failed])(
-    'refuses every transition out of the terminal status %p',
-    (status) => {
-      const transaction = storedTransaction(Bet, brl('1.00'), { status, failureCode: FailureCode.InsufficientFunds });
-      const attempts = [
-        () => transaction.markProcessed(undefined, brl('1.00'), LATER),
-        () => transaction.reject(FailureCode.InsufficientFunds, brl('1.00'), LATER),
-        () => transaction.fail(FailureCode.ProcessingFailed, LATER),
-        () => transaction.markPendingReference(brl('1.00'), LATER, LATER),
-        () => transaction.scheduleReferenceRetry(LATER, LATER),
-      ];
+  test.each([
+    WagerTransactionStatus.Processed,
+    WagerTransactionStatus.Rejected,
+    WagerTransactionStatus.Failed,
+  ])('refuses every transition out of the terminal status %p', (status) => {
+    const transaction = storedTransaction(Bet, brl('1.00'), {
+      status,
+      failureCode: FailureCode.InsufficientFunds,
+    });
+    const attempts = [
+      () => transaction.markProcessed(undefined, brl('1.00'), LATER),
+      () =>
+        transaction.reject(FailureCode.InsufficientFunds, brl('1.00'), LATER),
+      () => transaction.fail(FailureCode.ProcessingFailed, LATER),
+      () => transaction.markPendingReference(brl('1.00'), LATER, LATER),
+      () => transaction.scheduleReferenceRetry(LATER, LATER),
+    ];
 
-      for (const attempt of attempts) {
-        expect(attempt).toThrow(InvalidTransactionStateError);
-      }
-      expect(transaction.status).toBe(status);
-    },
-  );
+    for (const attempt of attempts) {
+      expect(attempt).toThrow(InvalidTransactionStateError);
+    }
+    expect(transaction.status).toBe(status);
+  });
 });
 
 describe('WagerTransaction queries', () => {
@@ -228,10 +278,26 @@ describe('WagerTransaction queries', () => {
   test('only REFUND and ROLLBACK require a reference', () => {
     const withReference = { referenceExternalTransactionId: 'ext-0' };
 
-    expect(pendingTransaction(Refund, brl('1.00'), withReference).requiresReference()).toBe(true);
-    expect(pendingTransaction(Rollback, brl('1.00'), withReference).requiresReference()).toBe(true);
-    expect(pendingTransaction(Win, brl('1.00'), withReference).requiresReference()).toBe(false);
-    expect(pendingTransaction(Bet, brl('1.00')).requiresReference()).toBe(false);
+    expect(
+      pendingTransaction(
+        Refund,
+        brl('1.00'),
+        withReference,
+      ).requiresReference(),
+    ).toBe(true);
+    expect(
+      pendingTransaction(
+        Rollback,
+        brl('1.00'),
+        withReference,
+      ).requiresReference(),
+    ).toBe(true);
+    expect(
+      pendingTransaction(Win, brl('1.00'), withReference).requiresReference(),
+    ).toBe(false);
+    expect(pendingTransaction(Bet, brl('1.00')).requiresReference()).toBe(
+      false,
+    );
   });
 
   test('matches its own payload hash only', () => {
@@ -245,33 +311,54 @@ describe('WagerTransaction queries', () => {
     [Bet, LedgerDirection.Debit],
     [Win, LedgerDirection.Credit],
   ] as const)('%p moves the ledger in the %p direction', (kind, direction) => {
-    expect(pendingTransaction(kind, brl('1.00')).ledgerDirectionFor()).toBe(direction);
+    expect(pendingTransaction(kind, brl('1.00')).ledgerDirectionFor()).toBe(
+      direction,
+    );
   });
 
   test('REFUND credits the bet back', () => {
-    const refund = pendingTransaction(Refund, brl('1.00'), { referenceExternalTransactionId: 'ext-0' });
+    const refund = pendingTransaction(Refund, brl('1.00'), {
+      referenceExternalTransactionId: 'ext-0',
+    });
 
-    expect(refund.ledgerDirectionFor(storedTransaction(Bet, brl('1.00')))).toBe(LedgerDirection.Credit);
+    expect(refund.ledgerDirectionFor(storedTransaction(Bet, brl('1.00')))).toBe(
+      LedgerDirection.Credit,
+    );
   });
 
   test.each([
     [Bet, LedgerDirection.Credit],
     [Win, LedgerDirection.Debit],
     [Refund, LedgerDirection.Debit],
-  ])('ROLLBACK of a %p moves the ledger in the %p direction', (referenceKind, direction) => {
-    const rollback = pendingTransaction(Rollback, brl('1.00'), { referenceExternalTransactionId: 'ext-0' });
+  ])(
+    'ROLLBACK of a %p moves the ledger in the %p direction',
+    (referenceKind, direction) => {
+      const rollback = pendingTransaction(Rollback, brl('1.00'), {
+        referenceExternalTransactionId: 'ext-0',
+      });
 
-    expect(rollback.ledgerDirectionFor(storedTransaction(referenceKind, brl('1.00')))).toBe(direction);
-  });
+      expect(
+        rollback.ledgerDirectionFor(
+          storedTransaction(referenceKind, brl('1.00')),
+        ),
+      ).toBe(direction);
+    },
+  );
 
   test('LOSS has no ledger direction', () => {
-    expect(() => pendingTransaction(Loss, brl('0.00')).ledgerDirectionFor()).toThrow(InvalidWagerTransactionError);
+    expect(() =>
+      pendingTransaction(Loss, brl('0.00')).ledgerDirectionFor(),
+    ).toThrow(InvalidWagerTransactionError);
   });
 
   test('ROLLBACK needs the reference to know its direction', () => {
-    const rollback = pendingTransaction(Rollback, brl('1.00'), { referenceExternalTransactionId: 'ext-0' });
+    const rollback = pendingTransaction(Rollback, brl('1.00'), {
+      referenceExternalTransactionId: 'ext-0',
+    });
 
-    expect(() => rollback.ledgerDirectionFor()).toThrow(InvalidWagerTransactionError);
+    expect(() => rollback.ledgerDirectionFor()).toThrow(
+      InvalidWagerTransactionError,
+    );
   });
 });
 

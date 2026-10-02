@@ -20,7 +20,9 @@ export class IdempotencyKeyConflictError extends ApplicationError {
   override readonly code = 'IDEMPOTENCY_KEY_CONFLICT';
 
   constructor(readonly idempotencyKey: string) {
-    super('A transaction with this idempotency key already exists with a different payload');
+    super(
+      'A transaction with this idempotency key already exists with a different payload',
+    );
   }
 }
 
@@ -31,6 +33,8 @@ export class ExternalTransactionConflictError extends ApplicationError {
     readonly providerId: string,
     readonly externalTransactionId: string,
   ) {
-    super(`Provider ${providerId} already used external transaction ${externalTransactionId} with another idempotency key`);
+    super(
+      `Provider ${providerId} already used external transaction ${externalTransactionId} with another idempotency key`,
+    );
   }
 }

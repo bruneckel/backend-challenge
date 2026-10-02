@@ -13,7 +13,8 @@ export const AT = new Date('2026-10-02T12:00:00.000Z');
 export const LATER = new Date('2026-10-02T12:05:00.000Z');
 export const HASH = 'a'.repeat(64);
 
-export const money = (amount: string, currency = 'BRL') => Money.from({ amount, currency });
+export const money = (amount: string, currency = 'BRL') =>
+  Money.from({ amount, currency });
 
 export interface OpenedWallet {
   wallet: Wallet;
@@ -21,7 +22,10 @@ export interface OpenedWallet {
   openingEntry: WalletLedgerEntry | null;
 }
 
-export function openedWallet(initialBalance = '100.00', currency = 'BRL'): OpenedWallet {
+export function openedWallet(
+  initialBalance = '100.00',
+  currency = 'BRL',
+): OpenedWallet {
   const id = Bun.randomUUIDv7();
   const playerId = Bun.randomUUIDv7();
   const openingTransactionId = Bun.randomUUIDv7();
@@ -50,7 +54,10 @@ export function openedWallet(initialBalance = '100.00', currency = 'BRL'): Opene
   return { wallet, opening, openingEntry };
 }
 
-export async function storeOpenedWallet(scope: WageringScope, opened: OpenedWallet): Promise<void> {
+export async function storeOpenedWallet(
+  scope: WageringScope,
+  opened: OpenedWallet,
+): Promise<void> {
   await scope.wallets.insert(opened.wallet);
   if (opened.opening !== null && opened.openingEntry !== null) {
     await scope.transactions.insert(opened.opening);
@@ -83,9 +90,16 @@ export function pendingTransaction(
   });
 }
 
-export function settledBet(wallet: Wallet, amount = '10.00'): { bet: WagerTransaction; entry: WalletLedgerEntry } {
+export function settledBet(
+  wallet: Wallet,
+  amount = '10.00',
+): { bet: WagerTransaction; entry: WalletLedgerEntry } {
   const bet = pendingTransaction(wallet, WagerTransactionKind.Bet, amount);
-  const entry = wallet.debit(bet.money, { transactionId: bet.id, entryId: Bun.randomUUIDv7(), at: AT });
+  const entry = wallet.debit(bet.money, {
+    transactionId: bet.id,
+    entryId: Bun.randomUUIDv7(),
+    at: AT,
+  });
   bet.markProcessed(undefined, wallet.balance, AT);
   return { bet, entry };
 }

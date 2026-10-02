@@ -1,4 +1,8 @@
-import { type ArgumentsHost, Catch, type ExceptionFilter } from '@nestjs/common';
+import {
+  type ArgumentsHost,
+  Catch,
+  type ExceptionFilter,
+} from '@nestjs/common';
 import type { HttpAdapterHost } from '@nestjs/core';
 import { ApplicationError } from '@shared/application/application-error';
 import type { IdGenerator } from '@shared/application/id-generator';
@@ -17,7 +21,11 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const { httpAdapter } = this.adapterHost;
     const http = host.switchToHttp();
     const response = http.getResponse();
-    const correlationId = ensureCorrelationId(http.getRequest(), response, this.ids);
+    const correlationId = ensureCorrelationId(
+      http.getRequest(),
+      response,
+      this.ids,
+    );
     const problem = problemFor(error);
     if (problem.code === 'INTERNAL_ERROR') {
       reportUnexpected(error, correlationId);
@@ -43,9 +51,13 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 }
 
 function reportUnexpected(error: unknown, correlationId: string): void {
-  const ours = error instanceof DomainError || error instanceof ApplicationError;
+  const ours =
+    error instanceof DomainError || error instanceof ApplicationError;
   const name = error instanceof Error ? error.name : typeof error;
-  const code = typeof error === 'object' && error !== null ? Reflect.get(error, 'code') : undefined;
+  const code =
+    typeof error === 'object' && error !== null
+      ? Reflect.get(error, 'code')
+      : undefined;
   process.stderr.write(
     `${JSON.stringify({
       level: 'error',

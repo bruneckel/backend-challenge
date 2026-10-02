@@ -28,12 +28,15 @@ describe('wallets table', () => {
 
     await insertWallet(wallet);
 
-    const [stored] = await database.sql`select balance_amount::text as balance_amount from wallets where id = ${wallet.id}`;
+    const [stored] =
+      await database.sql`select balance_amount::text as balance_amount from wallets where id = ${wallet.id}`;
     expect(stored.balance_amount).toBe('99999999999999999.99');
   });
 
   test.each(requiredColumns(walletRow()))('requires %s', async (column) => {
-    expect(await nullViolationOf(insertWallet(walletRow({ [column]: null })))).toEqual({
+    expect(
+      await nullViolationOf(insertWallet(walletRow({ [column]: null }))),
+    ).toEqual({
       sqlState: SqlState.NotNullViolation,
       column,
     });
@@ -42,10 +45,26 @@ describe('wallets table', () => {
   test.each([
     ['a lowercase currency', { currency: 'brl' }, 'wallets_currency_format'],
     ['a two-letter currency', { currency: 'BR' }, 'wallets_currency_format'],
-    ['a balance with three decimals', { balance_amount: '10.005' }, 'wallets_balance_amount_money'],
-    ['a balance with one decimal', { balance_amount: '10.0' }, 'wallets_balance_amount_money'],
-    ['a negative balance', { balance_amount: '-0.01' }, 'wallets_balance_amount_money'],
-    ['a balance of 10^17', { balance_amount: '100000000000000000.00' }, 'wallets_balance_amount_money'],
+    [
+      'a balance with three decimals',
+      { balance_amount: '10.005' },
+      'wallets_balance_amount_money',
+    ],
+    [
+      'a balance with one decimal',
+      { balance_amount: '10.0' },
+      'wallets_balance_amount_money',
+    ],
+    [
+      'a negative balance',
+      { balance_amount: '-0.01' },
+      'wallets_balance_amount_money',
+    ],
+    [
+      'a balance of 10^17',
+      { balance_amount: '100000000000000000.00' },
+      'wallets_balance_amount_money',
+    ],
     ['version zero', { version: 0 }, 'wallets_version_positive'],
   ] as const)('rejects %s', async (_, overrides, constraint) => {
     expect(await violationOf(insertWallet(walletRow(overrides)))).toEqual({
@@ -58,7 +77,11 @@ describe('wallets table', () => {
     const wallet = walletRow();
     await insertWallet(wallet);
 
-    expect(await violationOf(insertWallet(walletRow({ id: wallet.id, currency: 'USD' })))).toEqual({
+    expect(
+      await violationOf(
+        insertWallet(walletRow({ id: wallet.id, currency: 'USD' })),
+      ),
+    ).toEqual({
       sqlState: SqlState.UniqueViolation,
       constraint: 'wallets_pkey',
     });
@@ -68,7 +91,11 @@ describe('wallets table', () => {
     const wallet = walletRow();
     await insertWallet(wallet);
 
-    expect(await violationOf(insertWallet(walletRow({ player_id: wallet.player_id })))).toEqual({
+    expect(
+      await violationOf(
+        insertWallet(walletRow({ player_id: wallet.player_id })),
+      ),
+    ).toEqual({
       sqlState: SqlState.UniqueViolation,
       constraint: 'wallets_player_currency_key',
     });
@@ -78,9 +105,12 @@ describe('wallets table', () => {
     const wallet = walletRow();
     await insertWallet(wallet);
 
-    await insertWallet(walletRow({ player_id: wallet.player_id, currency: 'USD' }));
+    await insertWallet(
+      walletRow({ player_id: wallet.player_id, currency: 'USD' }),
+    );
 
-    const [{ count }] = await database.sql`select count(*)::int as count from wallets where player_id = ${wallet.player_id}`;
+    const [{ count }] =
+      await database.sql`select count(*)::int as count from wallets where player_id = ${wallet.player_id}`;
     expect(count).toBe(2);
   });
 });

@@ -66,27 +66,37 @@ export class MessageBatchConsumer {
       return 0;
     }
     const retained = new Set(messages);
-    const heartbeat = setInterval(() => void this.extendVisibility([...retained]), this.options.heartbeatIntervalMs);
+    const heartbeat = setInterval(
+      () => void this.extendVisibility([...retained]),
+      this.options.heartbeatIntervalMs,
+    );
     let paused = false;
     try {
-      await forEachWithConcurrency(groupsOf(messages), this.options.maxConcurrentGroups, async (group) => {
-        for (const [index, message] of group.entries()) {
-          if (signal.aborted || paused) {
-            await this.release(group.slice(index), retained);
-            return;
+      await forEachWithConcurrency(
+        groupsOf(messages),
+        this.options.maxConcurrentGroups,
+        async (group) => {
+          for (const [index, message] of group.entries()) {
+            if (signal.aborted || paused) {
+              await this.release(group.slice(index), retained);
+              return;
+            }
+            const disposition = await this.handle(message);
+            const outcome = await this.settle(message, disposition);
+            retained.delete(message);
+            if (
+              disposition.action === 'retry' &&
+              disposition.pauseConsumer === true
+            ) {
+              paused = true;
+            }
+            if (outcome === 'holds_group') {
+              await this.release(group.slice(index + 1), retained);
+              return;
+            }
           }
-          const disposition = await this.handle(message);
-          const outcome = await this.settle(message, disposition);
-          retained.delete(message);
-          if (disposition.action === 'retry' && disposition.pauseConsumer === true) {
-            paused = true;
-          }
-          if (outcome === 'holds_group') {
-            await this.release(group.slice(index + 1), retained);
-            return;
-          }
-        }
-      });
+        },
+      );
     } finally {
       clearInterval(heartbeat);
     }
@@ -107,7 +117,10 @@ export class MessageBatchConsumer {
           MaxNumberOfMessages: this.options.batchSize,
           WaitTimeSeconds: this.options.waitTimeSeconds,
           VisibilityTimeout: this.options.visibilityTimeoutSeconds,
-          MessageSystemAttributeNames: ['ApproximateReceiveCount', 'MessageGroupId'],
+          MessageSystemAttributeNames: [
+            'ApproximateReceiveCount',
+            'MessageGroupId',
+          ],
         }),
         { abortSignal: signal },
       );
@@ -131,7 +144,10 @@ export class MessageBatchConsumer {
     }
   }
 
-  private async settle(message: ConsumedMessage, disposition: Disposition): Promise<Outcome> {
+  private async settle(
+    message: ConsumedMessage,
+    disposition: Disposition,
+  ): Promise<Outcome> {
     switch (disposition.action) {
       case 'acknowledge':
         await this.delete(message);
@@ -140,11 +156,19 @@ export class MessageBatchConsumer {
         await this.changeVisibility(message, disposition.delaySeconds);
         return 'holds_group';
       case 'dead_letter':
-        return this.deadLetter(message, disposition.reason, disposition.originalMessageId);
+        return this.deadLetter(
+          message,
+          disposition.reason,
+          disposition.originalMessageId,
+        );
     }
   }
 
-  private async deadLetter(message: ConsumedMessage, reason: string, originalMessageId: string | undefined): Promise<Outcome> {
+  private async deadLetter(
+    message: ConsumedMessage,
+    reason: string,
+    originalMessageId: string | undefined,
+  ): Promise<Outcome> {
     try {
       await this.options.client.send(
         new SendMessageCommand({
@@ -164,7 +188,11 @@ export class MessageBatchConsumer {
       );
     } catch (error) {
       this.options.onEvent?.({ type: 'dead_letter_failed', message, error });
-      await this.changeVisibility(message, this.options.deadLetterRetryDelaySeconds ?? DEFAULT_DEAD_LETTER_RETRY_DELAY_SECONDS);
+      await this.changeVisibility(
+        message,
+        this.options.deadLetterRetryDelaySeconds ??
+          DEFAULT_DEAD_LETTER_RETRY_DELAY_SECONDS,
+      );
       return 'holds_group';
     }
     await this.delete(message);
@@ -174,12 +202,18 @@ export class MessageBatchConsumer {
   private async delete(message: ConsumedMessage): Promise<void> {
     await this.attempt('DeleteMessage', async () =>
       this.options.client.send(
-        new DeleteMessageCommand({ QueueUrl: await this.url(this.options.queueUrl), ReceiptHandle: message.receiptHandle }),
+        new DeleteMessageCommand({
+          QueueUrl: await this.url(this.options.queueUrl),
+          ReceiptHandle: message.receiptHandle,
+        }),
       ),
     );
   }
 
-  private async changeVisibility(message: ConsumedMessage, seconds: number): Promise<void> {
+  private async changeVisibility(
+    message: ConsumedMessage,
+    seconds: number,
+  ): Promise<void> {
     await this.attempt('ChangeMessageVisibility', async () =>
       this.options.client.send(
         new ChangeMessageVisibilityCommand({
@@ -191,7 +225,10 @@ export class MessageBatchConsumer {
     );
   }
 
-  private async release(messages: ConsumedMessage[], retained: Set<ConsumedMessage>): Promise<void> {
+  private async release(
+    messages: ConsumedMessage[],
+    retained: Set<ConsumedMessage>,
+  ): Promise<void> {
     for (const message of messages) {
       retained.delete(message);
     }
@@ -199,10 +236,18 @@ export class MessageBatchConsumer {
   }
 
   private async extendVisibility(messages: ConsumedMessage[]): Promise<void> {
-    await this.changeVisibilityOf(messages, this.options.visibilityTimeoutSeconds, 'ExtendVisibility');
+    await this.changeVisibilityOf(
+      messages,
+      this.options.visibilityTimeoutSeconds,
+      'ExtendVisibility',
+    );
   }
 
-  private async changeVisibilityOf(messages: ConsumedMessage[], seconds: number, operation: string): Promise<void> {
+  private async changeVisibilityOf(
+    messages: ConsumedMessage[],
+    seconds: number,
+    operation: string,
+  ): Promise<void> {
     if (messages.length === 0) {
       return;
     }
@@ -220,7 +265,10 @@ export class MessageBatchConsumer {
     );
   }
 
-  private async attempt(operation: string, call: () => Promise<unknown>): Promise<void> {
+  private async attempt(
+    operation: string,
+    call: () => Promise<unknown>,
+  ): Promise<void> {
     try {
       await call();
     } catch (error) {
@@ -243,7 +291,10 @@ function toConsumedMessage(message: Message): ConsumedMessage[] {
       receiptHandle: message.ReceiptHandle,
       body: message.Body ?? '',
       groupId: message.Attributes?.MessageGroupId ?? '',
-      receiveCount: Number.parseInt(message.Attributes?.ApproximateReceiveCount ?? '1', 10),
+      receiveCount: Number.parseInt(
+        message.Attributes?.ApproximateReceiveCount ?? '1',
+        10,
+      ),
     },
   ];
 }
@@ -258,20 +309,32 @@ function groupsOf(messages: ConsumedMessage[]): ConsumedMessage[][] {
   return [...groups.values()];
 }
 
-async function forEachWithConcurrency<T>(items: T[], limit: number, work: (item: T) => Promise<void>): Promise<void> {
+async function forEachWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
   let next = 0;
-  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const item = items[next];
-      next += 1;
-      if (item !== undefined) {
-        await work(item);
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (next < items.length) {
+        const item = items[next];
+        next += 1;
+        if (item !== undefined) {
+          await work(item);
+        }
       }
-    }
-  });
+    },
+  );
   await Promise.all(runners);
 }
 
 function attributes(values: Record<string, string>) {
-  return Object.fromEntries(Object.entries(values).map(([name, value]) => [name, { DataType: 'String', StringValue: value }]));
+  return Object.fromEntries(
+    Object.entries(values).map(([name, value]) => [
+      name,
+      { DataType: 'String', StringValue: value },
+    ]),
+  );
 }

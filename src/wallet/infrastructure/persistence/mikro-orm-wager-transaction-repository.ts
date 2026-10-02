@@ -31,11 +31,16 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
     return this.findOne({ id });
   }
 
-  findByIdempotencyKey(idempotencyKey: string): Promise<WagerTransaction | null> {
+  findByIdempotencyKey(
+    idempotencyKey: string,
+  ): Promise<WagerTransaction | null> {
     return this.findOne({ idempotencyKey });
   }
 
-  findByExternalId(providerId: string, externalTransactionId: string): Promise<WagerTransaction | null> {
+  findByExternalId(
+    providerId: string,
+    externalTransactionId: string,
+  ): Promise<WagerTransaction | null> {
     return this.findOne({ providerId, externalTransactionId });
   }
 
@@ -50,10 +55,16 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
 
   async insert(transaction: WagerTransaction): Promise<void> {
     try {
-      await this.em.insert(WagerTransactionRecord, toWagerTransactionRow(transaction));
+      await this.em.insert(
+        WagerTransactionRecord,
+        toWagerTransactionRow(transaction),
+      );
     } catch (error) {
       const failure = classifyDatabaseError(error);
-      const key = failure.kind === 'unique_violation' ? DUPLICATE_KEYS[failure.constraint ?? ''] : undefined;
+      const key =
+        failure.kind === 'unique_violation'
+          ? DUPLICATE_KEYS[failure.constraint ?? '']
+          : undefined;
       if (key !== undefined) {
         throw new DuplicateWagerTransactionError(key, { cause: error });
       }
@@ -72,7 +83,10 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
     }
   }
 
-  async hasProcessedReversal(referenceTransactionId: string, kind: WagerTransactionKind): Promise<boolean> {
+  async hasProcessedReversal(
+    referenceTransactionId: string,
+    kind: WagerTransactionKind,
+  ): Promise<boolean> {
     const count = await this.em.count(WagerTransactionRecord, {
       referenceTransactionId,
       kind,
@@ -81,8 +95,17 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
     return count > 0;
   }
 
-  private async findOne(where: Partial<Record<'id' | 'idempotencyKey' | 'providerId' | 'externalTransactionId', string>>) {
-    const row = await this.em.findOne(WagerTransactionRecord, where, { disableIdentityMap: true });
+  private async findOne(
+    where: Partial<
+      Record<
+        'id' | 'idempotencyKey' | 'providerId' | 'externalTransactionId',
+        string
+      >
+    >,
+  ) {
+    const row = await this.em.findOne(WagerTransactionRecord, where, {
+      disableIdentityMap: true,
+    });
     return row === null ? null : toWagerTransaction(row);
   }
 }

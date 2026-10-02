@@ -1,8 +1,21 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { AT, LATER, money, openedWallet, storeOpenedWallet } from '@test/support/domain-builders';
+import {
+  AT,
+  LATER,
+  money,
+  openedWallet,
+  storeOpenedWallet,
+} from '@test/support/domain-builders';
 import { gate, rejectionOf } from '@test/support/async';
-import { type PersistenceHarness, createPersistenceHarness, plain } from '@test/support/persistence';
-import { StaleWalletVersionError, WalletAlreadyExistsError } from '@wallet/application/ports/wallet-repository';
+import {
+  type PersistenceHarness,
+  createPersistenceHarness,
+  plain,
+} from '@test/support/persistence';
+import {
+  StaleWalletVersionError,
+  WalletAlreadyExistsError,
+} from '@wallet/application/ports/wallet-repository';
 import { Wallet } from '@wallet/domain/wallet/wallet';
 
 let harness: PersistenceHarness;
@@ -21,23 +34,41 @@ async function stored(initialBalance = '100.00'): Promise<Wallet> {
   return opened.wallet;
 }
 
-const movement = () => ({ transactionId: Bun.randomUUIDv7(), entryId: Bun.randomUUIDv7(), at: LATER });
+const movement = () => ({
+  transactionId: Bun.randomUUIDv7(),
+  entryId: Bun.randomUUIDv7(),
+  at: LATER,
+});
 
 describe('MikroOrmWalletRepository', () => {
-  test.each(['99999999999999999.99', '0.00', '0.10'])('round-trips a wallet with a balance of %s', async (balance) => {
-    const wallet = await stored(balance);
+  test.each(['99999999999999999.99', '0.00', '0.10'])(
+    'round-trips a wallet with a balance of %s',
+    async (balance) => {
+      const wallet = await stored(balance);
 
-    const found = await harness.unitOfWork.run(({ wallets }) => wallets.findById(wallet.id));
+      const found = await harness.unitOfWork.run(({ wallets }) =>
+        wallets.findById(wallet.id),
+      );
 
-    expect(plain(found?.toState())).toEqual(plain(wallet.toState()));
-    expect(found?.balance.toJSON()).toEqual({ amount: balance, currency: 'BRL' });
-  });
+      expect(plain(found?.toState())).toEqual(plain(wallet.toState()));
+      expect(found?.balance.toJSON()).toEqual({
+        amount: balance,
+        currency: 'BRL',
+      });
+    },
+  );
 
   test('returns null for an unknown wallet', async () => {
     const unknown = Bun.randomUUIDv7();
 
-    expect(await harness.unitOfWork.run(({ wallets }) => wallets.findById(unknown))).toBeNull();
-    expect(await harness.unitOfWork.run(({ wallets }) => wallets.lockForUpdate(unknown))).toBeNull();
+    expect(
+      await harness.unitOfWork.run(({ wallets }) => wallets.findById(unknown)),
+    ).toBeNull();
+    expect(
+      await harness.unitOfWork.run(({ wallets }) =>
+        wallets.lockForUpdate(unknown),
+      ),
+    ).toBeNull();
   });
 
   test('refuses a second wallet for the same player and currency', async () => {
@@ -51,7 +82,9 @@ describe('MikroOrmWalletRepository', () => {
       at: AT,
     }).wallet;
 
-    const insert = harness.unitOfWork.run(({ wallets }) => wallets.insert(duplicate));
+    const insert = harness.unitOfWork.run(({ wallets }) =>
+      wallets.insert(duplicate),
+    );
 
     expect(await rejectionOf(insert)).toBeInstanceOf(WalletAlreadyExistsError);
   });
@@ -66,8 +99,13 @@ describe('MikroOrmWalletRepository', () => {
       await wallets.applyBalanceChange(locked!, expectedVersion);
     });
 
-    const found = await harness.unitOfWork.run(({ wallets }) => wallets.findById(wallet.id));
-    expect(found?.balance.toJSON()).toEqual({ amount: '70.00', currency: 'BRL' });
+    const found = await harness.unitOfWork.run(({ wallets }) =>
+      wallets.findById(wallet.id),
+    );
+    expect(found?.balance.toJSON()).toEqual({
+      amount: '70.00',
+      currency: 'BRL',
+    });
     expect(found?.version).toBe(2);
     expect(found?.updatedAt).toEqual(LATER);
   });
@@ -82,11 +120,18 @@ describe('MikroOrmWalletRepository', () => {
     });
     stale.debit(money('50.00'), movement());
 
-    const apply = harness.unitOfWork.run(({ wallets }) => wallets.applyBalanceChange(stale, 1));
+    const apply = harness.unitOfWork.run(({ wallets }) =>
+      wallets.applyBalanceChange(stale, 1),
+    );
 
     expect(await rejectionOf(apply)).toBeInstanceOf(StaleWalletVersionError);
-    const found = await harness.unitOfWork.run(({ wallets }) => wallets.findById(wallet.id));
-    expect(found?.balance.toJSON()).toEqual({ amount: '90.00', currency: 'BRL' });
+    const found = await harness.unitOfWork.run(({ wallets }) =>
+      wallets.findById(wallet.id),
+    );
+    expect(found?.balance.toJSON()).toEqual({
+      amount: '90.00',
+      currency: 'BRL',
+    });
   });
 
   test('makes a second locker wait for the first commit and then read the new balance', async () => {
@@ -112,8 +157,16 @@ describe('MikroOrmWalletRepository', () => {
     });
     const [, seen] = await Promise.all([first, second]);
 
-    expect(order).toEqual(['first locked', 'second waiting', 'first committing', 'second locked']);
-    expect(seen?.balance.toJSON()).toEqual({ amount: '20.00', currency: 'BRL' });
+    expect(order).toEqual([
+      'first locked',
+      'second waiting',
+      'first committing',
+      'second locked',
+    ]);
+    expect(seen?.balance.toJSON()).toEqual({
+      amount: '20.00',
+      currency: 'BRL',
+    });
     expect(seen?.version).toBe(2);
   });
 
@@ -129,7 +182,9 @@ describe('MikroOrmWalletRepository', () => {
       await release.opened;
     });
     await heldLocked.opened;
-    const other = await harness.unitOfWork.run(({ wallets }) => wallets.lockForUpdate(free.id));
+    const other = await harness.unitOfWork.run(({ wallets }) =>
+      wallets.lockForUpdate(free.id),
+    );
     release.open();
     await holder;
 

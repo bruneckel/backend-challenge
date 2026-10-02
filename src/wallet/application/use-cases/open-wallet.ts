@@ -6,7 +6,10 @@ import type { WageringScope } from '@wallet/application/ports/wagering-scope';
 import { settlementEvents } from '@wallet/application/settlement-events';
 import { type WalletView, toWalletView } from '@wallet/application/views';
 import { Money, type MoneyProps } from '@wallet/domain/money/money';
-import { WagerTransaction, WagerTransactionKind } from '@wallet/domain/transaction/wager-transaction';
+import {
+  WagerTransaction,
+  WagerTransactionKind,
+} from '@wallet/domain/transaction/wager-transaction';
 import { Wallet } from '@wallet/domain/wallet/wallet';
 
 export interface OpenWalletCommand {
@@ -64,7 +67,11 @@ export class OpenWallet {
         settlementEvents(
           this.deps.ids,
           { correlationId: command.correlationId, occurredAt: at },
-          { transaction: opening, wallet, outcome: { type: 'processed', ledgerEntry: openingEntry } },
+          {
+            transaction: opening,
+            wallet,
+            outcome: { type: 'processed', ledgerEntry: openingEntry },
+          },
         ),
       );
     });

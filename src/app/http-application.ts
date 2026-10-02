@@ -6,7 +6,9 @@ import { SchemaValidationPipe } from '@platform/http/schema-validation.pipe';
 import { ID_GENERATOR } from '@platform/tokens';
 import type { IdGenerator } from '@shared/application/id-generator';
 
-export function configureHttpApplication(app: INestApplication): INestApplication {
+export function configureHttpApplication(
+  app: INestApplication,
+): INestApplication {
   const ids = app.get<IdGenerator>(ID_GENERATOR);
   app.use(correlationMiddleware(ids));
   app.useGlobalPipes(new SchemaValidationPipe());

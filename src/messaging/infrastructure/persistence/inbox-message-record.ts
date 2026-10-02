@@ -16,7 +16,10 @@ export const InboxMessageRecord = defineEntity({
 
 export type InboxMessageRow = InferEntity<typeof InboxMessageRecord>;
 
-export function toInboxMessageRow(message: InboxMessage, transactionId: string | undefined): InboxMessageRow {
+export function toInboxMessageRow(
+  message: InboxMessage,
+  transactionId: string | undefined,
+): InboxMessageRow {
   return {
     consumerName: message.consumerName,
     messageId: message.messageId,

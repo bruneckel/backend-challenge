@@ -1,11 +1,38 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { ReceiveMessageCommand, SendMessageCommand, type SQSClient } from '@aws-sdk/client-sqs';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
+import {
+  ReceiveMessageCommand,
+  SendMessageCommand,
+  type SQSClient,
+} from '@aws-sdk/client-sqs';
 import { waitUntil } from '@test/support/async';
 import { walletInvariantViolations } from '@test/support/invariants';
-import { type PersistenceHarness, createPersistenceHarness } from '@test/support/persistence';
-import { spawnProcess, startProcess, startWorkerProcess } from '@test/support/processes';
-import { type TestQueues, createTestQueues, createTestSqsClient } from '@test/support/sqs';
-import { type Wagering, createWagering, openWalletWith } from '@test/support/wagering';
+import {
+  type PersistenceHarness,
+  createPersistenceHarness,
+} from '@test/support/persistence';
+import {
+  spawnProcess,
+  startProcess,
+  startWorkerProcess,
+} from '@test/support/processes';
+import {
+  type TestQueues,
+  createTestQueues,
+  createTestSqsClient,
+} from '@test/support/sqs';
+import {
+  type Wagering,
+  createWagering,
+  openWalletWith,
+} from '@test/support/wagering';
 import type { WalletView } from '@wallet/application/views';
 
 let harness: PersistenceHarness;
@@ -32,7 +59,9 @@ afterAll(async () => {
   await harness.close();
 });
 
-const workerEnvironment = (extra: Record<string, string> = {}): Record<string, string> => ({
+const workerEnvironment = (
+  extra: Record<string, string> = {},
+): Record<string, string> => ({
   DATABASE_URL: harness.database.url,
   ...queues.environment,
   OUTBOX_PUBLISHER_ENABLED: 'false',
@@ -81,54 +110,83 @@ async function appliedMessageIds(wallets: WalletView[]): Promise<string[]> {
 
 async function visibleMessageIds(): Promise<string[]> {
   const { Messages = [] } = await sqs.send(
-    new ReceiveMessageCommand({ QueueUrl: queues.urls.commands, MaxNumberOfMessages: 10, WaitTimeSeconds: 1, VisibilityTimeout: 0 }),
+    new ReceiveMessageCommand({
+      QueueUrl: queues.urls.commands,
+      MaxNumberOfMessages: 10,
+      WaitTimeSeconds: 1,
+      VisibilityTimeout: 0,
+    }),
   );
   return Messages.map((message) => JSON.parse(message.Body!).messageId);
 }
 
 describe('consumer processes', () => {
   test('I8 SIGTERM finishes the messages in progress and gives the others back to the queue', async () => {
-    const wallets = await Promise.all(Array.from({ length: 6 }, () => openWalletWith(wagering, '100.00')));
+    const wallets = await Promise.all(
+      Array.from({ length: 6 }, () => openWalletWith(wagering, '100.00')),
+    );
     const sent = [];
     for (const wallet of wallets) {
       sent.push(await sendRequest(wallet));
     }
     const worker = await startProcess(
       'test/support/entrypoints/worker-slow-consumer.ts',
-      workerEnvironment({ CONSUMER_MAX_CONCURRENT_GROUPS: '2', SQS_VISIBILITY_TIMEOUT_SECONDS: '30', TEST_SLOW_HANDLER_MS: '1500' }),
+      workerEnvironment({
+        CONSUMER_MAX_CONCURRENT_GROUPS: '2',
+        SQS_VISIBILITY_TIMEOUT_SECONDS: '30',
+        TEST_SLOW_HANDLER_MS: '1500',
+      }),
     );
-    await waitUntil(() => worker.output().includes('processing started'), { timeoutMs: 15_000, description: 'a message to start' });
+    await waitUntil(() => worker.output().includes('processing started'), {
+      timeoutMs: 15_000,
+      description: 'a message to start',
+    });
 
     await worker.stop('SIGTERM');
 
     const started = (worker.output().match(/processing started/g) ?? []).length;
-    const finished = (worker.output().match(/processing finished/g) ?? []).length;
+    const finished = (worker.output().match(/processing finished/g) ?? [])
+      .length;
     const applied = await appliedMessageIds(wallets);
     const givenBack = await visibleMessageIds();
     expect(worker.output()).toContain('"msg":"shutdown complete"');
     expect(finished).toBe(started);
     expect(applied).toHaveLength(started);
-    expect(givenBack.sort()).toEqual(sent.filter((messageId) => !applied.includes(messageId)).sort());
+    expect(givenBack.sort()).toEqual(
+      sent.filter((messageId) => !applied.includes(messageId)).sort(),
+    );
     for (const wallet of wallets) {
-      expect(await walletInvariantViolations(harness.database.sql, wallet.id)).toEqual([]);
+      expect(
+        await walletInvariantViolations(harness.database.sql, wallet.id),
+      ).toEqual([]);
     }
   });
 
   test('C5 a worker killed after the commit and before the ack leaves a single effect after redelivery', async () => {
     const wallet = await openWalletWith(wagering, '100.00');
     const messageId = await sendRequest(wallet);
-    const environment = workerEnvironment({ SQS_VISIBILITY_TIMEOUT_SECONDS: '2' });
+    const environment = workerEnvironment({
+      SQS_VISIBILITY_TIMEOUT_SECONDS: '2',
+    });
 
-    const crashing = spawnProcess('test/support/entrypoints/worker-crash-before-ack.ts', environment, 'crashing-consumer');
+    const crashing = spawnProcess(
+      'test/support/entrypoints/worker-crash-before-ack.ts',
+      environment,
+      'crashing-consumer',
+    );
     await crashing.exited;
     expect(crashing.output()).toContain('committed, crashing before the ack');
     expect(await appliedMessageIds([wallet])).toEqual([messageId]);
 
-    const survivor = await startWorkerProcess({ ...environment, INSTANCE_ID: 'survivor' });
+    const survivor = await startWorkerProcess({
+      ...environment,
+      INSTANCE_ID: 'survivor',
+    });
     try {
       await waitUntil(
         async () => {
-          const [inbox] = await harness.database.sql`select count(*)::int as count from inbox_messages where message_id = ${messageId}`;
+          const [inbox] = await harness.database
+            .sql`select count(*)::int as count from inbox_messages where message_id = ${messageId}`;
           return inbox.count === 1 && (await visibleMessageIds()).length === 0;
         },
         { timeoutMs: 20_000, description: 'the redelivery to be acknowledged' },
@@ -139,8 +197,12 @@ describe('consumer processes', () => {
     }
 
     expect(await appliedMessageIds([wallet])).toEqual([messageId]);
-    expect((await wagering.queries.getWallet(wallet.id)).balance.amount).toBe('75.00');
+    expect((await wagering.queries.getWallet(wallet.id)).balance.amount).toBe(
+      '75.00',
+    );
     expect(await visibleMessageIds()).toEqual([]);
-    expect(await walletInvariantViolations(harness.database.sql, wallet.id)).toEqual([]);
+    expect(
+      await walletInvariantViolations(harness.database.sql, wallet.id),
+    ).toEqual([]);
   });
 });

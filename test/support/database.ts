@@ -3,7 +3,8 @@ import { migrateUp } from '@platform/database/migrator';
 import { rejectionOf } from './async';
 
 export const DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgresql://wagering:wagering@localhost:5432/wagering';
+  process.env.DATABASE_URL ??
+  'postgresql://wagering:wagering@localhost:5432/wagering';
 
 export const SqlState = {
   RestrictViolation: '23001',
@@ -55,20 +56,30 @@ export async function createMigratedDatabase(): Promise<TestDatabase> {
   return database;
 }
 
-export function insertRow(sql: SQL, table: string, row: Row): PromiseLike<unknown> {
+export function insertRow(
+  sql: SQL,
+  table: string,
+  row: Row,
+): PromiseLike<unknown> {
   return sql`insert into ${sql(table)} ${sql(row)}`;
 }
 
-async function databaseRejectionOf(write: PromiseLike<unknown>): Promise<Record<string, unknown>> {
+async function databaseRejectionOf(
+  write: PromiseLike<unknown>,
+): Promise<Record<string, unknown>> {
   return (await rejectionOf(write)) as Record<string, unknown>;
 }
 
-export async function violationOf(write: PromiseLike<unknown>): Promise<Violation> {
+export async function violationOf(
+  write: PromiseLike<unknown>,
+): Promise<Violation> {
   const { errno, constraint } = await databaseRejectionOf(write);
   return { sqlState: errno, constraint };
 }
 
-export async function nullViolationOf(write: PromiseLike<unknown>): Promise<NullViolation> {
+export async function nullViolationOf(
+  write: PromiseLike<unknown>,
+): Promise<NullViolation> {
   const { errno, column } = await databaseRejectionOf(write);
   return { sqlState: errno, column };
 }

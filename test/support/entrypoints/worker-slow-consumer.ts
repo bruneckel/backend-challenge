@@ -15,13 +15,29 @@ const slowMs = Number.parseInt(process.env.TEST_SLOW_HANDLER_MS ?? '1500', 10);
 
 await startWorkerWith((builder) =>
   builder.overrideProvider(WagerMessageHandler).useFactory({
-    factory: (submit: SubmitWagerTransaction, fingerprinter: PayloadFingerprinter, clock: Clock, config: AppConfig) => {
+    factory: (
+      submit: SubmitWagerTransaction,
+      fingerprinter: PayloadFingerprinter,
+      clock: Clock,
+      config: AppConfig,
+    ) => {
       const slowSubmit = {
-        async executeDelivery(command: SubmitWagerTransactionCommand, delivery: InboxMessage) {
-          log({ level: 'info', msg: 'processing started', messageId: delivery.messageId });
+        async executeDelivery(
+          command: SubmitWagerTransactionCommand,
+          delivery: InboxMessage,
+        ) {
+          log({
+            level: 'info',
+            msg: 'processing started',
+            messageId: delivery.messageId,
+          });
           await Bun.sleep(slowMs);
           const outcome = await submit.executeDelivery(command, delivery);
-          log({ level: 'info', msg: 'processing finished', messageId: delivery.messageId });
+          log({
+            level: 'info',
+            msg: 'processing finished',
+            messageId: delivery.messageId,
+          });
           return outcome;
         },
       } as unknown as SubmitWagerTransaction;
@@ -31,7 +47,10 @@ await startWorkerWith((builder) =>
         clock,
         consumerName: config.consumer.name,
         maxAttempts: config.consumer.maxAttempts,
-        retryBackoff: ExponentialBackoff.create({ baseMs: config.consumer.retryBaseMs, maxMs: config.consumer.retryMaxMs }),
+        retryBackoff: ExponentialBackoff.create({
+          baseMs: config.consumer.retryBaseMs,
+          maxMs: config.consumer.retryMaxMs,
+        }),
       });
     },
     inject: [SubmitWagerTransaction, PAYLOAD_FINGERPRINTER, CLOCK, APP_CONFIG],

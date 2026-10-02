@@ -1,6 +1,9 @@
 import { inboxMessagePayload } from '@messaging/application/inbound-message';
 import { InboxMessage } from '@messaging/domain/inbox-message';
-import type { ConsumedMessage, Disposition } from '@messaging/infrastructure/sqs/message-batch-consumer';
+import type {
+  ConsumedMessage,
+  Disposition,
+} from '@messaging/infrastructure/sqs/message-batch-consumer';
 import type { Clock } from '@shared/application/clock';
 import type { PayloadFingerprinter } from '@shared/application/payload-fingerprinter';
 import type { ExponentialBackoff } from '@shared/domain/exponential-backoff';
@@ -38,7 +41,9 @@ export class WagerMessageHandler {
         InboxMessage.receive({
           messageId: request.messageId,
           consumerName: this.deps.consumerName,
-          payloadHash: this.deps.fingerprinter.fingerprint(inboxMessagePayload(request)),
+          payloadHash: this.deps.fingerprinter.fingerprint(
+            inboxMessagePayload(request),
+          ),
           receivedAt: this.deps.clock.now(),
         }),
       );
@@ -46,14 +51,24 @@ export class WagerMessageHandler {
     } catch (error) {
       const failure = classifyConsumerFailure(error);
       if (failure.type === 'dead_letter') {
-        return { action: 'dead_letter', reason: failure.reason, originalMessageId: request.messageId };
+        return {
+          action: 'dead_letter',
+          reason: failure.reason,
+          originalMessageId: request.messageId,
+        };
       }
       if (message.receiveCount >= this.deps.maxAttempts) {
-        return { action: 'dead_letter', reason: 'RETRIES_EXHAUSTED', originalMessageId: request.messageId };
+        return {
+          action: 'dead_letter',
+          reason: 'RETRIES_EXHAUSTED',
+          originalMessageId: request.messageId,
+        };
       }
       return {
         action: 'retry',
-        delaySeconds: Math.ceil(this.deps.retryBackoff.delayFor(message.receiveCount) / 1000),
+        delaySeconds: Math.ceil(
+          this.deps.retryBackoff.delayFor(message.receiveCount) / 1000,
+        ),
         pauseConsumer: failure.pauseConsumer,
       };
     }
@@ -71,7 +86,9 @@ function parseRequest(body: string): WagerTransactionRequested | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
-function commandFrom(request: WagerTransactionRequested): SubmitWagerTransactionCommand {
+function commandFrom(
+  request: WagerTransactionRequested,
+): SubmitWagerTransactionCommand {
   const { idempotencyKey, ...operation } = request.data;
   return {
     ...operation,

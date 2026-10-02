@@ -9,6 +9,8 @@ export async function createWorkerApplication(
   config: AppConfig,
   options: ApplicationOptions = {},
 ): Promise<INestApplication> {
-  const app = await NestFactory.create(WorkerModule.forRoot(config), { logger: options.logger ?? ['error', 'warn'] });
+  const app = await NestFactory.create(WorkerModule.forRoot(config), {
+    logger: options.logger ?? ['error', 'warn'],
+  });
   return configureHttpApplication(app);
 }

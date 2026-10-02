@@ -19,13 +19,18 @@ describe('lint guard against numbers in domain and application code', () => {
     ['Number.parseFloat(amount)', 'no-restricted-properties'],
     ['big.toNumber()', 'no-restricted-properties'],
   ])('forbids %p in domain code', async (expression, ruleId) => {
-    expect(await ruleIdsFor(sample(expression), 'src/wallet/domain/example.ts')).toContain(ruleId);
+    expect(
+      await ruleIdsFor(sample(expression), 'src/wallet/domain/example.ts'),
+    ).toContain(ruleId);
   });
 
   test('applies the same guard to application code', async () => {
-    expect(await ruleIdsFor(sample('Number(amount)'), 'src/wallet/application/example.ts')).toContain(
-      'no-restricted-syntax',
-    );
+    expect(
+      await ruleIdsFor(
+        sample('Number(amount)'),
+        'src/wallet/application/example.ts',
+      ),
+    ).toContain('no-restricted-syntax');
   });
 
   test('allows Number() in platform code such as configuration parsing', async () => {

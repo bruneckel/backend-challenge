@@ -1,5 +1,8 @@
 import type { UnitOfWork } from '@shared/application/unit-of-work';
-import { TransactionNotFoundError, WalletNotFoundError } from '@wallet/application/errors';
+import {
+  TransactionNotFoundError,
+  WalletNotFoundError,
+} from '@wallet/application/errors';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
 import {
   type LedgerPage,
@@ -37,10 +40,19 @@ export class WalletQueries {
       if ((await wallets.findById(walletId)) === null) {
         throw new WalletNotFoundError(walletId);
       }
-      const entries = await ledger.page(walletId, { beforeVersion: query.beforeVersion, limit: query.limit + 1 });
+      const entries = await ledger.page(walletId, {
+        beforeVersion: query.beforeVersion,
+        limit: query.limit + 1,
+      });
       const items = entries.slice(0, query.limit).map(toLedgerEntryView);
       const last = items.at(-1);
-      return { items, nextBeforeVersion: entries.length > query.limit && last !== undefined ? last.walletVersion : null };
+      return {
+        items,
+        nextBeforeVersion:
+          entries.length > query.limit && last !== undefined
+            ? last.walletVersion
+            : null,
+      };
     });
   }
 
@@ -54,11 +66,19 @@ export class WalletQueries {
     });
   }
 
-  getTransactionByExternalId(providerId: string, externalTransactionId: string): Promise<TransactionView> {
+  getTransactionByExternalId(
+    providerId: string,
+    externalTransactionId: string,
+  ): Promise<TransactionView> {
     return this.deps.unitOfWork.run(async ({ transactions }) => {
-      const transaction = await transactions.findByExternalId(providerId, externalTransactionId);
+      const transaction = await transactions.findByExternalId(
+        providerId,
+        externalTransactionId,
+      );
       if (transaction === null) {
-        throw new TransactionNotFoundError(`${providerId}/${externalTransactionId}`);
+        throw new TransactionNotFoundError(
+          `${providerId}/${externalTransactionId}`,
+        );
       }
       return toTransactionView(transaction);
     });

@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { CanonicalJsonFingerprinter } from '@platform/crypto/canonical-json-fingerprinter';
-import { type WagerOperation, wagerOperationPayload } from '@wallet/application/wager-operation';
+import {
+  type WagerOperation,
+  wagerOperationPayload,
+} from '@wallet/application/wager-operation';
 
 const fingerprinter = new CanonicalJsonFingerprinter();
 
@@ -15,11 +18,14 @@ const operation: WagerOperation = {
   money: { amount: '25.00', currency: 'BRL' },
 };
 
-const hashOf = (value: WagerOperation) => fingerprinter.fingerprint(wagerOperationPayload(value));
+const hashOf = (value: WagerOperation) =>
+  fingerprinter.fingerprint(wagerOperationPayload(value));
 
 describe('wager operation fingerprint', () => {
   test('matches the documented SHA-256 of the RFC 8785 canonical JSON', () => {
-    expect(hashOf(operation)).toBe('629836932b79106b99523d06a1e7fa80689b0ea1e1c47aa3f0a5a2c87d0c4344');
+    expect(hashOf(operation)).toBe(
+      '629836932b79106b99523d06a1e7fa80689b0ea1e1c47aa3f0a5a2c87d0c4344',
+    );
   });
 
   test('ignores the order of the fields', () => {
@@ -51,7 +57,9 @@ describe('wager operation fingerprint', () => {
   });
 
   test('omits an absent reference instead of hashing it as null', () => {
-    expect(hashOf({ ...operation, referenceExternalTransactionId: undefined })).toBe(hashOf(operation));
+    expect(
+      hashOf({ ...operation, referenceExternalTransactionId: undefined }),
+    ).toBe(hashOf(operation));
   });
 
   test.each([

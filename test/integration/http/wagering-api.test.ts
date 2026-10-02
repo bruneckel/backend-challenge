@@ -3,13 +3,20 @@ import { CanonicalJsonFingerprinter } from '@platform/crypto/canonical-json-fing
 import { type ApiHarness, startApi } from '@test/support/api';
 import { insertRow } from '@test/support/database';
 import { transactionRow } from '@test/support/schema-rows';
-import { type WagerOperation, wagerOperationPayload } from '@wallet/application/wager-operation';
+import {
+  type WagerOperation,
+  wagerOperationPayload,
+} from '@wallet/application/wager-operation';
 import { ProcessPendingReference } from '@wallet/application/use-cases/process-pending-reference';
 
 let api: ApiHarness;
 
 beforeAll(async () => {
-  api = await startApi({ DB_LOCK_TIMEOUT_MS: '300', REFERENCE_BACKOFF_BASE_MS: '10', REFERENCE_BACKOFF_MAX_MS: '40' });
+  api = await startApi({
+    DB_LOCK_TIMEOUT_MS: '300',
+    REFERENCE_BACKOFF_BASE_MS: '10',
+    REFERENCE_BACKOFF_MAX_MS: '40',
+  });
 });
 
 afterAll(async () => {
@@ -29,11 +36,18 @@ interface Submission {
 }
 
 async function openWallet(amount = '100.00'): Promise<Wallet> {
-  const response = await api.request('POST', '/wallets', { body: { playerId: Bun.randomUUIDv7(), initialBalance: brl(amount) } });
+  const response = await api.request('POST', '/wallets', {
+    body: { playerId: Bun.randomUUIDv7(), initialBalance: brl(amount) },
+  });
   return response.body;
 }
 
-function submission(wallet: Wallet, kind: string, amount: string, extra: Record<string, unknown> = {}): Submission {
+function submission(
+  wallet: Wallet,
+  kind: string,
+  amount: string,
+  extra: Record<string, unknown> = {},
+): Submission {
   const externalTransactionId = `ext-${Bun.randomUUIDv7()}`;
   return {
     key: `provider-a:${externalTransactionId}`,
@@ -52,19 +66,38 @@ function submission(wallet: Wallet, kind: string, amount: string, extra: Record<
 }
 
 function referencing(reference: Submission, kind: string): Submission {
-  const wallet = { id: String(reference.body.walletId), playerId: String(reference.body.playerId) };
+  const wallet = {
+    id: String(reference.body.walletId),
+    playerId: String(reference.body.playerId),
+  };
   const money = reference.body.money as { amount: string };
-  return submission(wallet, kind, money.amount, { referenceExternalTransactionId: reference.body.externalTransactionId });
+  return submission(wallet, kind, money.amount, {
+    referenceExternalTransactionId: reference.body.externalTransactionId,
+  });
 }
 
-const submit = ({ key, body }: Submission, headers: Record<string, string> = {}) =>
-  api.request('POST', '/wagering/transactions', { headers: { 'idempotency-key': key, ...headers }, body });
+const submit = (
+  { key, body }: Submission,
+  headers: Record<string, string> = {},
+) =>
+  api.request('POST', '/wagering/transactions', {
+    headers: { 'idempotency-key': key, ...headers },
+    body,
+  });
 
-function expectProblem(response: { status: number; headers: Headers; body: any }, status: number, code: string): void {
+function expectProblem(
+  response: { status: number; headers: Headers; body: any },
+  status: number,
+  code: string,
+): void {
   expect(response.status).toBe(status);
-  expect(response.headers.get('content-type')).toContain('application/problem+json');
+  expect(response.headers.get('content-type')).toContain(
+    'application/problem+json',
+  );
   expect(response.body).toMatchObject({ type: 'about:blank', status, code });
-  expect(response.body.correlationId).toBe(response.headers.get('x-correlation-id'));
+  expect(response.body.correlationId).toBe(
+    response.headers.get('x-correlation-id'),
+  );
 }
 
 describe('POST /wagering/transactions', () => {
@@ -101,11 +134,19 @@ describe('POST /wagering/transactions', () => {
   test('answers 202 with a Location for a REFUND that arrives before its BET', async () => {
     const wallet = await openWallet('100.00');
 
-    const response = await submit(referencing(submission(wallet, 'BET', '10.00'), 'REFUND'));
+    const response = await submit(
+      referencing(submission(wallet, 'BET', '10.00'), 'REFUND'),
+    );
 
     expect(response.status).toBe(202);
-    expect(response.body).toMatchObject({ status: 'PENDING_REFERENCE', balance: brl('100.00'), idempotentReplay: false });
-    expect(response.headers.get('location')).toBe(`/wagering/transactions/${response.body.transactionId}`);
+    expect(response.body).toMatchObject({
+      status: 'PENDING_REFERENCE',
+      balance: brl('100.00'),
+      idempotentReplay: false,
+    });
+    expect(response.headers.get('location')).toBe(
+      `/wagering/transactions/${response.body.transactionId}`,
+    );
   });
 
   test.each([
@@ -133,13 +174,17 @@ describe('POST /wagering/transactions', () => {
     const stillWaiting = await submit(refundRequest);
     await submit(betRequest);
     await Bun.sleep(60);
-    const outcome = await api.app
-      .get(ProcessPendingReference)
-      .execute({ transactionId: waiting.body.transactionId, walletId: wallet.id });
+    const outcome = await api.app.get(ProcessPendingReference).execute({
+      transactionId: waiting.body.transactionId,
+      walletId: wallet.id,
+    });
     const settled = await submit(refundRequest);
 
     expect(stillWaiting.status).toBe(202);
-    expect(stillWaiting.body).toEqual({ ...waiting.body, idempotentReplay: true });
+    expect(stillWaiting.body).toEqual({
+      ...waiting.body,
+      idempotentReplay: true,
+    });
     expect(outcome).toBe('processed');
     expect(settled.status).toBe(200);
     expect(settled.body).toEqual({
@@ -207,14 +252,23 @@ describe('POST /wagering/transactions', () => {
     ['an unknown kind', { kind: 'JACKPOT' }],
     ['a numeric amount', { money: { amount: 10, currency: 'BRL' } }],
     ['an amount with three decimals', { money: brl('10.005') }],
-    ['an amount above seventeen integer digits', { money: brl('100000000000000000.00') }],
+    [
+      'an amount above seventeen integer digits',
+      { money: brl('100000000000000000.00') },
+    ],
     ['an empty round id', { roundId: '' }],
-    ['an external id longer than 128 characters', { externalTransactionId: 'e'.repeat(129) }],
+    [
+      'an external id longer than 128 characters',
+      { externalTransactionId: 'e'.repeat(129) },
+    ],
   ])('answers 400 INVALID_PAYLOAD for %s', async (_, override) => {
     const wallet = await openWallet();
     const request = submission(wallet, 'BET', '10.00');
 
-    const response = await submit({ key: request.key, body: { ...request.body, ...override } });
+    const response = await submit({
+      key: request.key,
+      body: { ...request.body, ...override },
+    });
 
     expectProblem(response, 400, 'INVALID_PAYLOAD');
   });
@@ -222,17 +276,32 @@ describe('POST /wagering/transactions', () => {
   test.each([
     ['UNSUPPORTED_KIND', 'an OPENING', 'OPENING', {}],
     ['REFERENCE_REQUIRED', 'a REFUND without a reference', 'REFUND', {}],
-    ['REFERENCE_NOT_ALLOWED', 'a BET with a reference', 'BET', { referenceExternalTransactionId: 'ext-1' }],
+    [
+      'REFERENCE_NOT_ALLOWED',
+      'a BET with a reference',
+      'BET',
+      { referenceExternalTransactionId: 'ext-1' },
+    ],
   ])('answers 400 %s for %s', async (code, _, kind, extra) => {
     const wallet = await openWallet();
 
-    expectProblem(await submit(submission(wallet, kind, '10.00', extra)), 400, code);
+    expectProblem(
+      await submit(submission(wallet, kind, '10.00', extra)),
+      400,
+      code,
+    );
   });
 
   test('answers 404 WALLET_NOT_FOUND for an unknown wallet', async () => {
     const wallet = await openWallet();
 
-    expectProblem(await submit(submission({ ...wallet, id: Bun.randomUUIDv7() }, 'BET', '10.00')), 404, 'WALLET_NOT_FOUND');
+    expectProblem(
+      await submit(
+        submission({ ...wallet, id: Bun.randomUUIDv7() }, 'BET', '10.00'),
+      ),
+      404,
+      'WALLET_NOT_FOUND',
+    );
   });
 
   test('answers 409 IDEMPOTENCY_KEY_CONFLICT for the same key with another payload', async () => {
@@ -240,7 +309,10 @@ describe('POST /wagering/transactions', () => {
     const request = submission(wallet, 'BET', '10.00');
     await submit(request);
 
-    const response = await submit({ key: request.key, body: { ...request.body, money: brl('11.00') } });
+    const response = await submit({
+      key: request.key,
+      body: { ...request.body, money: brl('11.00') },
+    });
 
     expectProblem(response, 409, 'IDEMPOTENCY_KEY_CONFLICT');
     expect(response.body.retryable).toBe(false);
@@ -251,7 +323,11 @@ describe('POST /wagering/transactions', () => {
     const request = submission(wallet, 'BET', '10.00');
     await submit(request);
 
-    expectProblem(await submit({ key: 'regenerated-key', body: request.body }), 409, 'EXTERNAL_TRANSACTION_CONFLICT');
+    expectProblem(
+      await submit({ key: 'regenerated-key', body: request.body }),
+      409,
+      'EXTERNAL_TRANSACTION_CONFLICT',
+    );
   });
 
   test('answers 503 SERVICE_UNAVAILABLE with Retry-After while the wallet stays locked', async () => {
@@ -275,7 +351,9 @@ describe('POST /wagering/transactions', () => {
   test('stores the correlation id it receives with the transaction', async () => {
     const wallet = await openWallet();
 
-    const response = await submit(submission(wallet, 'BET', '10.00'), { 'x-correlation-id': 'trace-xyz' });
+    const response = await submit(submission(wallet, 'BET', '10.00'), {
+      'x-correlation-id': 'trace-xyz',
+    });
 
     const [row] = await api.database.sql`
       select correlation_id from wager_transactions where id = ${response.body.transactionId}`;
@@ -290,7 +368,10 @@ describe('GET /wagering/transactions', () => {
     const request = submission(wallet, 'BET', '10.00');
     const created = await submit(request);
 
-    const byId = await api.request('GET', `/wagering/transactions/${created.body.transactionId}`);
+    const byId = await api.request(
+      'GET',
+      `/wagering/transactions/${created.body.transactionId}`,
+    );
     const byExternalId = await api.request(
       'GET',
       `/providers/provider-a/wagering/transactions/${request.body.externalTransactionId}`,
@@ -316,11 +397,26 @@ describe('GET /wagering/transactions', () => {
   });
 
   test('answers 404 TRANSACTION_NOT_FOUND for unknown transactions', async () => {
-    expectProblem(await api.request('GET', `/wagering/transactions/${Bun.randomUUIDv7()}`), 404, 'TRANSACTION_NOT_FOUND');
-    expectProblem(await api.request('GET', '/providers/provider-a/wagering/transactions/missing'), 404, 'TRANSACTION_NOT_FOUND');
+    expectProblem(
+      await api.request('GET', `/wagering/transactions/${Bun.randomUUIDv7()}`),
+      404,
+      'TRANSACTION_NOT_FOUND',
+    );
+    expectProblem(
+      await api.request(
+        'GET',
+        '/providers/provider-a/wagering/transactions/missing',
+      ),
+      404,
+      'TRANSACTION_NOT_FOUND',
+    );
   });
 
   test('answers 400 INVALID_REQUEST for a transaction id that is not a UUID', async () => {
-    expectProblem(await api.request('GET', '/wagering/transactions/tx-1'), 400, 'INVALID_REQUEST');
+    expectProblem(
+      await api.request('GET', '/wagering/transactions/tx-1'),
+      400,
+      'INVALID_REQUEST',
+    );
   });
 });

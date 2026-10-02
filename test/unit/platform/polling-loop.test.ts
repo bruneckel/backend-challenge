@@ -3,7 +3,11 @@ import { PollingLoop } from '@platform/lifecycle/polling-loop';
 import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
 import { waitUntil } from '@test/support/async';
 
-const fastBackoff = ExponentialBackoff.create({ baseMs: 5, maxMs: 20, random: () => 1 });
+const fastBackoff = ExponentialBackoff.create({
+  baseMs: 5,
+  maxMs: 20,
+  random: () => 1,
+});
 
 describe('PollingLoop', () => {
   test('runs again right away while there is work and waits when idle', async () => {
@@ -72,7 +76,11 @@ describe('PollingLoop', () => {
   });
 
   test('stops promptly while waiting for the next poll', async () => {
-    const loop = new PollingLoop({ step: async () => false, idleDelayMs: 60_000, errorBackoff: fastBackoff });
+    const loop = new PollingLoop({
+      step: async () => false,
+      idleDelayMs: 60_000,
+      errorBackoff: fastBackoff,
+    });
     loop.start();
     await Bun.sleep(20);
 

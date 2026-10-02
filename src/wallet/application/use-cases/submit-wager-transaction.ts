@@ -13,12 +13,21 @@ import {
 } from '@wallet/application/errors';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
 import { DuplicateWagerTransactionError } from '@wallet/application/ports/wager-transaction-repository';
-import { type TransactionResult, transactionResult } from '@wallet/application/transaction-result';
+import {
+  type TransactionResult,
+  transactionResult,
+} from '@wallet/application/transaction-result';
 import { TransactionSettler } from '@wallet/application/transaction-settler';
-import { type WagerOperation, wagerOperationPayload } from '@wallet/application/wager-operation';
+import {
+  type WagerOperation,
+  wagerOperationPayload,
+} from '@wallet/application/wager-operation';
 import { Money } from '@wallet/domain/money/money';
 import type { SettlementPolicy } from '@wallet/domain/settlement/settlement-policy';
-import { type SubmittableKind, WagerTransaction } from '@wallet/domain/transaction/wager-transaction';
+import {
+  type SubmittableKind,
+  WagerTransaction,
+} from '@wallet/domain/transaction/wager-transaction';
 
 export interface SubmitWagerTransactionCommand extends WagerOperation {
   kind: SubmittableKind;
@@ -27,7 +36,8 @@ export interface SubmitWagerTransactionCommand extends WagerOperation {
   causationId: string;
 }
 
-export type DeliveryOutcome = { type: 'handled'; result: TransactionResult } | { type: 'duplicate' };
+export type DeliveryOutcome =
+  { type: 'handled'; result: TransactionResult } | { type: 'duplicate' };
 
 export interface SubmitWagerTransactionDependencies {
   unitOfWork: UnitOfWork<WageringScope>;
@@ -52,12 +62,19 @@ export class SubmitWagerTransaction {
     this.settler = new TransactionSettler(deps.settlement, deps.ids);
   }
 
-  async execute(command: SubmitWagerTransactionCommand): Promise<TransactionResult> {
+  async execute(
+    command: SubmitWagerTransactionCommand,
+  ): Promise<TransactionResult> {
     const prepared = this.prepare(command);
-    return this.withRetries(() => this.deps.unitOfWork.run((scope) => this.process(scope, prepared)));
+    return this.withRetries(() =>
+      this.deps.unitOfWork.run((scope) => this.process(scope, prepared)),
+    );
   }
 
-  async executeDelivery(command: SubmitWagerTransactionCommand, delivery: InboxMessage): Promise<DeliveryOutcome> {
+  async executeDelivery(
+    command: SubmitWagerTransactionCommand,
+    delivery: InboxMessage,
+  ): Promise<DeliveryOutcome> {
     const prepared = this.prepare(command);
     return this.withRetries(() =>
       this.deps.unitOfWork.run(async (scope): Promise<DeliveryOutcome> => {
@@ -83,7 +100,9 @@ export class SubmitWagerTransaction {
       providerId: command.providerId,
       externalTransactionId: command.externalTransactionId,
       idempotencyKey: command.idempotencyKey,
-      payloadHash: this.deps.fingerprinter.fingerprint(wagerOperationPayload(command)),
+      payloadHash: this.deps.fingerprinter.fingerprint(
+        wagerOperationPayload(command),
+      ),
       walletId: command.walletId,
       playerId: command.playerId,
       roundId: command.roundId,
@@ -97,8 +116,13 @@ export class SubmitWagerTransaction {
     return { transaction, causationId: command.causationId };
   }
 
-  private async process(scope: WageringScope, prepared: PreparedSubmission): Promise<TransactionResult> {
-    const transaction = WagerTransaction.rehydrate(prepared.transaction.toState());
+  private async process(
+    scope: WageringScope,
+    prepared: PreparedSubmission,
+  ): Promise<TransactionResult> {
+    const transaction = WagerTransaction.rehydrate(
+      prepared.transaction.toState(),
+    );
     const known = await this.knownResult(scope, transaction);
     if (known !== undefined) {
       return known;
@@ -111,12 +135,23 @@ export class SubmitWagerTransaction {
     if (knownUnderLock !== undefined) {
       return knownUnderLock;
     }
-    const sameExternalId = await scope.transactions.findByExternalId(transaction.providerId, transaction.externalTransactionId);
+    const sameExternalId = await scope.transactions.findByExternalId(
+      transaction.providerId,
+      transaction.externalTransactionId,
+    );
     if (sameExternalId !== null) {
-      throw new ExternalTransactionConflictError(transaction.providerId, transaction.externalTransactionId);
+      throw new ExternalTransactionConflictError(
+        transaction.providerId,
+        transaction.externalTransactionId,
+      );
     }
     const at = this.deps.clock.now();
-    const settlement = await this.settler.settle(scope, transaction, wallet, at);
+    const settlement = await this.settler.settle(
+      scope,
+      transaction,
+      wallet,
+      at,
+    );
     await this.settler.recordNew(scope, settlement, {
       correlationId: transaction.correlationId,
       causationId: prepared.causationId,
@@ -125,8 +160,13 @@ export class SubmitWagerTransaction {
     return transactionResult(transaction, false);
   }
 
-  private async knownResult(scope: WageringScope, transaction: WagerTransaction): Promise<TransactionResult | undefined> {
-    const existing = await scope.transactions.findByIdempotencyKey(transaction.idempotencyKey);
+  private async knownResult(
+    scope: WageringScope,
+    transaction: WagerTransaction,
+  ): Promise<TransactionResult | undefined> {
+    const existing = await scope.transactions.findByIdempotencyKey(
+      transaction.idempotencyKey,
+    );
     if (existing === null) {
       return undefined;
     }
@@ -143,13 +183,22 @@ export class SubmitWagerTransaction {
       try {
         return await attempt();
       } catch (error) {
-        if (error instanceof DuplicateWagerTransactionError && !duplicateRetried) {
+        if (
+          error instanceof DuplicateWagerTransactionError &&
+          !duplicateRetried
+        ) {
           duplicateRetried = true;
           continue;
         }
-        if (error instanceof TransientFailure && error.reason === 'deadlock' && deadlockRetries < MAX_DEADLOCK_RETRIES) {
+        if (
+          error instanceof TransientFailure &&
+          error.reason === 'deadlock' &&
+          deadlockRetries < MAX_DEADLOCK_RETRIES
+        ) {
           deadlockRetries += 1;
-          await new Promise((resolve) => setTimeout(resolve, deadlockBackoff.delayFor(deadlockRetries)));
+          await new Promise((resolve) =>
+            setTimeout(resolve, deadlockBackoff.delayFor(deadlockRetries)),
+          );
           continue;
         }
         throw error;

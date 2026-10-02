@@ -15,25 +15,40 @@ interface HeaderWriter {
 }
 
 export function correlationMiddleware(ids: IdGenerator) {
-  return (request: CorrelatedRequest, response: HeaderWriter, next: () => void): void => {
+  return (
+    request: CorrelatedRequest,
+    response: HeaderWriter,
+    next: () => void,
+  ): void => {
     ensureCorrelationId(request, response, ids);
     next();
   };
 }
 
-export function ensureCorrelationId(request: CorrelatedRequest, response: HeaderWriter, ids: IdGenerator): string {
+export function ensureCorrelationId(
+  request: CorrelatedRequest,
+  response: HeaderWriter,
+  ids: IdGenerator,
+): string {
   if (request.correlationId === undefined) {
     const received = request.headers[CORRELATION_HEADER];
-    request.correlationId = typeof received === 'string' && VALID_CORRELATION_ID.test(received) ? received : ids.next();
+    request.correlationId =
+      typeof received === 'string' && VALID_CORRELATION_ID.test(received)
+        ? received
+        : ids.next();
     response.setHeader('X-Correlation-Id', request.correlationId);
   }
   return request.correlationId;
 }
 
-export const CorrelationId = createParamDecorator((_: unknown, context: ExecutionContext): string => {
-  const request = context.switchToHttp().getRequest<CorrelatedRequest>();
-  if (request.correlationId === undefined) {
-    throw new Error('The correlation middleware did not run for this request');
-  }
-  return request.correlationId;
-});
+export const CorrelationId = createParamDecorator(
+  (_: unknown, context: ExecutionContext): string => {
+    const request = context.switchToHttp().getRequest<CorrelatedRequest>();
+    if (request.correlationId === undefined) {
+      throw new Error(
+        'The correlation middleware did not run for this request',
+      );
+    }
+    return request.correlationId;
+  },
+);

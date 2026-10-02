@@ -37,7 +37,9 @@ export class WalletLedgerEntry {
 
   static create(props: CreateLedgerEntryProps): WalletLedgerEntry {
     if (!Number.isInteger(props.walletVersion) || props.walletVersion < 1) {
-      throw new InvalidLedgerEntryError('Wallet version must be a positive integer');
+      throw new InvalidLedgerEntryError(
+        'Wallet version must be a positive integer',
+      );
     }
     if (!props.money.isPositive()) {
       throw new InvalidLedgerEntryError('Ledger amount must be positive');

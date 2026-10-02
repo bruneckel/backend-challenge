@@ -16,7 +16,9 @@ const sqs = createSqsClient();
 const suffix = uniqueSuffix();
 const createdQueues: string[] = [];
 
-async function createQueuePair(name: string): Promise<{ sourceUrl: string; dlqUrl: string }> {
+async function createQueuePair(
+  name: string,
+): Promise<{ sourceUrl: string; dlqUrl: string }> {
   const dlq = await sqs.send(
     new CreateQueueCommand({
       QueueName: `spike-${suffix}-${name}-dlq.fifo`,
@@ -25,7 +27,10 @@ async function createQueuePair(name: string): Promise<{ sourceUrl: string; dlqUr
   );
   const dlqUrl = dlq.QueueUrl!;
   const dlqAttributes = await sqs.send(
-    new GetQueueAttributesCommand({ QueueUrl: dlqUrl, AttributeNames: ['QueueArn'] }),
+    new GetQueueAttributesCommand({
+      QueueUrl: dlqUrl,
+      AttributeNames: ['QueueArn'],
+    }),
   );
   const source = await sqs.send(
     new CreateQueueCommand({
@@ -71,7 +76,11 @@ async function send(
 
 async function receive(
   queueUrl: string,
-  options: { max?: number; waitSeconds?: number; visibilitySeconds?: number } = {},
+  options: {
+    max?: number;
+    waitSeconds?: number;
+    visibilitySeconds?: number;
+  } = {},
 ): Promise<Message[]> {
   const result = await sqs.send(
     new ReceiveMessageCommand({
@@ -79,7 +88,10 @@ async function receive(
       MaxNumberOfMessages: options.max ?? 1,
       WaitTimeSeconds: options.waitSeconds ?? 1,
       VisibilityTimeout: options.visibilitySeconds,
-      MessageSystemAttributeNames: ['ApproximateReceiveCount', 'MessageGroupId'],
+      MessageSystemAttributeNames: [
+        'ApproximateReceiveCount',
+        'MessageGroupId',
+      ],
       MessageAttributeNames: ['All'],
     }),
   );
@@ -87,10 +99,19 @@ async function receive(
 }
 
 async function acknowledge(queueUrl: string, message: Message): Promise<void> {
-  await sqs.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: message.ReceiptHandle }));
+  await sqs.send(
+    new DeleteMessageCommand({
+      QueueUrl: queueUrl,
+      ReceiptHandle: message.ReceiptHandle,
+    }),
+  );
 }
 
-async function release(queueUrl: string, message: Message, visibilitySeconds: number): Promise<void> {
+async function release(
+  queueUrl: string,
+  message: Message,
+  visibilitySeconds: number,
+): Promise<void> {
   await sqs.send(
     new ChangeMessageVisibilityCommand({
       QueueUrl: queueUrl,
@@ -100,15 +121,20 @@ async function release(queueUrl: string, message: Message, visibilitySeconds: nu
   );
 }
 
-
 afterAll(async () => {
-  await Promise.all(createdQueues.map((queueUrl) => sqs.send(new DeleteQueueCommand({ QueueUrl: queueUrl }))));
+  await Promise.all(
+    createdQueues.map((queueUrl) =>
+      sqs.send(new DeleteQueueCommand({ QueueUrl: queueUrl })),
+    ),
+  );
 });
 
 describe('MiniStack SQS FIFO behaviour the consumer relies on', () => {
   test('delivers the receive count, the group id and message attributes', async () => {
     const { sourceUrl } = await createQueuePair('attributes');
-    await send(sourceUrl, 'attributes', 'wallet-a', `attributes-${suffix}`, { correlationId: 'c-1' });
+    await send(sourceUrl, 'attributes', 'wallet-a', `attributes-${suffix}`, {
+      correlationId: 'c-1',
+    });
 
     const [message] = await receive(sourceUrl);
 
@@ -129,7 +155,9 @@ describe('MiniStack SQS FIFO behaviour the consumer relies on', () => {
 
     expect(messages.map((message) => message.Body)).toEqual(['same payload']);
     expect(extra).toHaveLength(0);
-    await Promise.all(messages.map((message) => acknowledge(sourceUrl, message)));
+    await Promise.all(
+      messages.map((message) => acknowledge(sourceUrl, message)),
+    );
   });
 
   test('holds back the rest of a group while one of its messages is in flight', async () => {
@@ -208,27 +236,49 @@ describe('MiniStack SQS FIFO behaviour the consumer relies on', () => {
       new SendMessageBatchCommand({
         QueueUrl: sourceUrl,
         Entries: [
-          { Id: 'one', MessageBody: 'batch one', MessageGroupId: 'wallet-g', MessageDeduplicationId: `batch-1-${suffix}` },
-          { Id: 'two', MessageBody: 'batch two', MessageGroupId: 'wallet-g', MessageDeduplicationId: `batch-2-${suffix}` },
+          {
+            Id: 'one',
+            MessageBody: 'batch one',
+            MessageGroupId: 'wallet-g',
+            MessageDeduplicationId: `batch-1-${suffix}`,
+          },
+          {
+            Id: 'two',
+            MessageBody: 'batch two',
+            MessageGroupId: 'wallet-g',
+            MessageDeduplicationId: `batch-2-${suffix}`,
+          },
         ],
       }),
     );
 
-    expect(result.Successful?.map((entry) => entry.Id).sort()).toEqual(['one', 'two']);
+    expect(result.Successful?.map((entry) => entry.Id).sort()).toEqual([
+      'one',
+      'two',
+    ]);
     expect(result.Failed ?? []).toHaveLength(0);
   });
 
   test('accepts a manual dead-letter send and reports the queue depth', async () => {
     const { dlqUrl } = await createQueuePair('manualdlq');
-    await send(dlqUrl, 'manual', 'wallet-h', `manual-${suffix}`, { reason: 'INVALID_MESSAGE' });
+    await send(dlqUrl, 'manual', 'wallet-h', `manual-${suffix}`, {
+      reason: 'INVALID_MESSAGE',
+    });
 
     const attributes = await sqs.send(
-      new GetQueueAttributesCommand({ QueueUrl: dlqUrl, AttributeNames: ['ApproximateNumberOfMessages'] }),
+      new GetQueueAttributesCommand({
+        QueueUrl: dlqUrl,
+        AttributeNames: ['ApproximateNumberOfMessages'],
+      }),
     );
     const [message] = await receive(dlqUrl, { waitSeconds: 2 });
 
-    expect(Number(attributes.Attributes?.ApproximateNumberOfMessages)).toBeGreaterThanOrEqual(1);
-    expect(message?.MessageAttributes?.reason?.StringValue).toBe('INVALID_MESSAGE');
+    expect(
+      Number(attributes.Attributes?.ApproximateNumberOfMessages),
+    ).toBeGreaterThanOrEqual(1);
+    expect(message?.MessageAttributes?.reason?.StringValue).toBe(
+      'INVALID_MESSAGE',
+    );
     await acknowledge(dlqUrl, message!);
   });
 });

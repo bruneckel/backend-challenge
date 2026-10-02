@@ -1,4 +1,8 @@
-import { IntegrationEvent, type EventContext, type IntegrationEventProps } from '@messaging/domain/integration-event';
+import {
+  IntegrationEvent,
+  type EventContext,
+  type IntegrationEventProps,
+} from '@messaging/domain/integration-event';
 import type { LedgerDirection } from '@wallet/domain/ledger/ledger-direction';
 import type { WalletLedgerEntry } from '@wallet/domain/ledger/wallet-ledger-entry';
 import type { MoneyProps } from '@wallet/domain/money/money';
@@ -22,7 +26,11 @@ export class WalletBalanceChanged extends IntegrationEvent<WalletBalanceChangedD
     super(props);
   }
 
-  static from(wallet: Wallet, entry: WalletLedgerEntry, context: EventContext): WalletBalanceChanged {
+  static from(
+    wallet: Wallet,
+    entry: WalletLedgerEntry,
+    context: EventContext,
+  ): WalletBalanceChanged {
     return new WalletBalanceChanged({
       ...context,
       aggregateId: wallet.id,

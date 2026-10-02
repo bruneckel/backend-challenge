@@ -13,7 +13,10 @@ export class ApiModule {
     return {
       module: ApiModule,
       imports: [
-        PlatformModule.forRoot({ config, entities: [...walletEntities, ...messagingEntities] }),
+        PlatformModule.forRoot({
+          config,
+          entities: [...walletEntities, ...messagingEntities],
+        }),
         HealthModule,
         WalletHttpModule,
       ],

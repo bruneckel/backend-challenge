@@ -1,13 +1,29 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type Message, SendMessageCommand, type SQSClient } from '@aws-sdk/client-sqs';
+import {
+  type Message,
+  SendMessageCommand,
+  type SQSClient,
+} from '@aws-sdk/client-sqs';
 import { MessageBatchConsumer } from '@messaging/infrastructure/sqs/message-batch-consumer';
 import { CanonicalJsonFingerprinter } from '@platform/crypto/canonical-json-fingerprinter';
 import { MikroOrmUnitOfWork } from '@platform/database/mikro-orm-unit-of-work';
 import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
 import { walletInvariantViolations } from '@test/support/invariants';
-import { type PersistenceHarness, createPersistenceHarness } from '@test/support/persistence';
-import { type TestQueues, createTestQueues, createTestSqsClient, drainQueue } from '@test/support/sqs';
-import { type Wagering, createWagering, openWalletWith } from '@test/support/wagering';
+import {
+  type PersistenceHarness,
+  createPersistenceHarness,
+} from '@test/support/persistence';
+import {
+  type TestQueues,
+  createTestQueues,
+  createTestSqsClient,
+  drainQueue,
+} from '@test/support/sqs';
+import {
+  type Wagering,
+  createWagering,
+  openWalletWith,
+} from '@test/support/wagering';
 import type { WalletView } from '@wallet/application/views';
 import { createWageringScope } from '@wallet/infrastructure/persistence/wagering-scope';
 import { WagerMessageHandler } from '@wallet/infrastructure/messaging/wager-message-handler';
@@ -30,14 +46,20 @@ afterEach(async () => {
   await harness.close();
 });
 
-function consumer(options: { maxAttempts?: number; submit?: Wagering['submit'] } = {}): MessageBatchConsumer {
+function consumer(
+  options: { maxAttempts?: number; submit?: Wagering['submit'] } = {},
+): MessageBatchConsumer {
   const handler = new WagerMessageHandler({
     submit: options.submit ?? wagering.submit,
     fingerprinter: new CanonicalJsonFingerprinter(),
     clock: wagering.clock,
     consumerName: 'wager-transactions-consumer',
     maxAttempts: options.maxAttempts ?? 8,
-    retryBackoff: ExponentialBackoff.create({ baseMs: 1000, maxMs: 1000, random: () => 1 }),
+    retryBackoff: ExponentialBackoff.create({
+      baseMs: 1000,
+      maxMs: 1000,
+      random: () => 1,
+    }),
   });
   return new MessageBatchConsumer({
     client: sqs,
@@ -60,7 +82,12 @@ interface Envelope {
   data: Record<string, unknown>;
 }
 
-function requestFor(wallet: WalletView, kind = 'BET', amount = '25.00', messageId = `msg-${Bun.randomUUIDv7()}`): Envelope {
+function requestFor(
+  wallet: WalletView,
+  kind = 'BET',
+  amount = '25.00',
+  messageId = `msg-${Bun.randomUUIDv7()}`,
+): Envelope {
   const externalTransactionId = `ext-${Bun.randomUUIDv7()}`;
   return {
     messageId,
@@ -102,7 +129,8 @@ async function balanceOf(walletId: string): Promise<string> {
   return (await wagering.queries.getWallet(walletId)).balance.amount;
 }
 
-const reasonOf = (message: Message | undefined) => message?.MessageAttributes?.reason?.StringValue;
+const reasonOf = (message: Message | undefined) =>
+  message?.MessageAttributes?.reason?.StringValue;
 
 describe('wager command consumer (I5)', () => {
   test('applies a message and acknowledges it after the commit', async () => {
@@ -120,8 +148,12 @@ describe('wager command consumer (I5)', () => {
       select transaction_id, processed_at from inbox_messages where message_id = ${request.messageId}`;
     expect(inbox.transaction_id).toBe(transaction.id);
     expect(inbox.processed_at).not.toBeNull();
-    expect(await drainQueue(sqs, queues.urls.commands, { idleReceives: 1 })).toEqual([]);
-    expect(await walletInvariantViolations(harness.database.sql, wallet.id)).toEqual([]);
+    expect(
+      await drainQueue(sqs, queues.urls.commands, { idleReceives: 1 }),
+    ).toEqual([]);
+    expect(
+      await walletInvariantViolations(harness.database.sql, wallet.id),
+    ).toEqual([]);
   });
 
   test('applies a message delivered twice only once', async () => {
@@ -133,9 +165,12 @@ describe('wager command consumer (I5)', () => {
     await consumeUntilEmpty(consumer());
 
     expect(await balanceOf(wallet.id)).toBe('75.00');
-    const inbox = await harness.database.sql`select 1 from inbox_messages where message_id = ${request.messageId}`;
+    const inbox = await harness.database
+      .sql`select 1 from inbox_messages where message_id = ${request.messageId}`;
     expect(inbox).toHaveLength(1);
-    expect(await walletInvariantViolations(harness.database.sql, wallet.id)).toEqual([]);
+    expect(
+      await walletInvariantViolations(harness.database.sql, wallet.id),
+    ).toEqual([]);
   });
 
   test('records another message id carrying an operation already applied as a replay', async () => {
@@ -166,14 +201,20 @@ describe('wager command consumer (I5)', () => {
     const [deadLetter] = await drainQueue(sqs, queues.urls.deadLetter);
     expect(reasonOf(deadLetter)).toBe('MESSAGE_ID_CONFLICT');
     expect(deadLetter?.Attributes?.MessageDeduplicationId).toBe(reusedSqsId);
-    expect(deadLetter?.MessageAttributes?.originalMessageId?.StringValue).toBe('msg-shared');
+    expect(deadLetter?.MessageAttributes?.originalMessageId?.StringValue).toBe(
+      'msg-shared',
+    );
   });
 });
 
 describe('wager command consumer (I6)', () => {
   test.each([
     ['a body that is not JSON', () => '{"messageId":'],
-    ['an unexpected message type', (wallet: WalletView) => JSON.stringify({ ...requestFor(wallet), type: 'SomethingElse' })],
+    [
+      'an unexpected message type',
+      (wallet: WalletView) =>
+        JSON.stringify({ ...requestFor(wallet), type: 'SomethingElse' }),
+    ],
     [
       'a request without an idempotency key',
       (wallet: WalletView) => {
@@ -183,8 +224,14 @@ describe('wager command consumer (I6)', () => {
         return JSON.stringify({ ...request, data });
       },
     ],
-    ['an OPENING', (wallet: WalletView) => JSON.stringify(requestFor(wallet, 'OPENING'))],
-    ['a REFUND without a reference', (wallet: WalletView) => JSON.stringify(requestFor(wallet, 'REFUND'))],
+    [
+      'an OPENING',
+      (wallet: WalletView) => JSON.stringify(requestFor(wallet, 'OPENING')),
+    ],
+    [
+      'a REFUND without a reference',
+      (wallet: WalletView) => JSON.stringify(requestFor(wallet, 'REFUND')),
+    ],
   ])('dead-letters %s at once as INVALID_MESSAGE', async (_, bodyFor) => {
     const wallet = await openWalletWith(wagering, '100.00');
     await send(bodyFor(wallet), wallet.id);
@@ -203,7 +250,9 @@ describe('wager command consumer (I6)', () => {
 
     await consumeUntilEmpty(consumer());
 
-    expect(reasonOf((await drainQueue(sqs, queues.urls.deadLetter))[0])).toBe('WALLET_NOT_FOUND');
+    expect(reasonOf((await drainQueue(sqs, queues.urls.deadLetter))[0])).toBe(
+      'WALLET_NOT_FOUND',
+    );
   });
 
   test('dead-letters an idempotency key reused with another payload as IDEMPOTENCY_KEY_CONFLICT', async () => {
@@ -216,7 +265,9 @@ describe('wager command consumer (I6)', () => {
 
     await consumeUntilEmpty(consumer());
 
-    expect(reasonOf((await drainQueue(sqs, queues.urls.deadLetter))[0])).toBe('IDEMPOTENCY_KEY_CONFLICT');
+    expect(reasonOf((await drainQueue(sqs, queues.urls.deadLetter))[0])).toBe(
+      'IDEMPOTENCY_KEY_CONFLICT',
+    );
     expect(await balanceOf(wallet.id)).toBe('75.00');
   });
 
@@ -229,14 +280,25 @@ describe('wager command consumer (I6)', () => {
 
     const [transaction] = await harness.database.sql`
       select status, failure_code from wager_transactions where idempotency_key = ${request.data.idempotencyKey}`;
-    expect(transaction).toEqual({ status: 'REJECTED', failure_code: 'INSUFFICIENT_FUNDS' });
-    expect(await drainQueue(sqs, queues.urls.commands, { idleReceives: 1 })).toEqual([]);
-    expect(await drainQueue(sqs, queues.urls.deadLetter, { idleReceives: 1 })).toEqual([]);
+    expect(transaction).toEqual({
+      status: 'REJECTED',
+      failure_code: 'INSUFFICIENT_FUNDS',
+    });
+    expect(
+      await drainQueue(sqs, queues.urls.commands, { idleReceives: 1 }),
+    ).toEqual([]);
+    expect(
+      await drainQueue(sqs, queues.urls.deadLetter, { idleReceives: 1 }),
+    ).toEqual([]);
   });
 
   test('retries a transient failure with backoff and dead-letters it once the attempts run out', async () => {
     const wallet = await openWalletWith(wagering, '100.00');
-    const impatient = createWagering(new MikroOrmUnitOfWork(harness.orm, createWageringScope, { lockTimeoutMs: 200 }));
+    const impatient = createWagering(
+      new MikroOrmUnitOfWork(harness.orm, createWageringScope, {
+        lockTimeoutMs: 200,
+      }),
+    );
     impatient.clock.set(wagering.clock.now());
     const target = consumer({ maxAttempts: 2, submit: impatient.submit });
     const request = requestFor(wallet);

@@ -13,11 +13,17 @@ export interface SqsClientOptions {
   maxAttempts?: number;
 }
 
-export function createSqsClient(settings: SqsConnectionSettings, options: SqsClientOptions = {}): SQSClient {
+export function createSqsClient(
+  settings: SqsConnectionSettings,
+  options: SqsClientOptions = {},
+): SQSClient {
   return new SQSClient({
     endpoint: settings.endpoint,
     region: settings.region,
-    credentials: { accessKeyId: settings.accessKeyId, secretAccessKey: settings.secretAccessKey },
+    credentials: {
+      accessKeyId: settings.accessKeyId,
+      secretAccessKey: settings.secretAccessKey,
+    },
     maxAttempts: options.maxAttempts ?? 2,
     requestHandler: {
       requestTimeout: options.requestTimeoutMs ?? 5000,

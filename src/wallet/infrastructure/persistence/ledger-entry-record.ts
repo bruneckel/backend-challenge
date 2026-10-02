@@ -39,7 +39,8 @@ export function toLedgerEntryRow(entry: WalletLedgerEntry): LedgerEntryRow {
 }
 
 export function toLedgerEntry(row: LedgerEntryRow): WalletLedgerEntry {
-  const money = (amount: string) => Money.from({ amount, currency: row.currency });
+  const money = (amount: string) =>
+    Money.from({ amount, currency: row.currency });
   return WalletLedgerEntry.rehydrate({
     id: row.id,
     walletId: row.walletId,

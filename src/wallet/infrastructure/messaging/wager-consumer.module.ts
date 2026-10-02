@@ -5,25 +5,25 @@ import {
   type BeforeApplicationShutdown,
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
-} from "@nestjs/common";
-import type { SQSClient } from "@aws-sdk/client-sqs";
+} from '@nestjs/common';
+import type { SQSClient } from '@aws-sdk/client-sqs';
 import {
   type ConsumerEvent,
   MessageBatchConsumer,
-} from "@messaging/infrastructure/sqs/message-batch-consumer";
-import { lazyQueueUrl } from "@messaging/infrastructure/sqs/queue-provisioning";
-import { createSqsClient } from "@messaging/infrastructure/sqs/sqs-client";
-import type { AppConfig } from "@platform/config/app-config";
-import { PollingLoop } from "@platform/lifecycle/polling-loop";
-import { APP_CONFIG, CLOCK, PAYLOAD_FINGERPRINTER } from "@platform/tokens";
-import type { Clock } from "@shared/application/clock";
-import type { PayloadFingerprinter } from "@shared/application/payload-fingerprinter";
-import { ExponentialBackoff } from "@shared/domain/exponential-backoff";
-import { SubmitWagerTransaction } from "@wallet/application/use-cases/submit-wager-transaction";
-import { WalletModule } from "@wallet/infrastructure/wallet.module";
-import { WagerMessageHandler } from "./wager-message-handler";
+} from '@messaging/infrastructure/sqs/message-batch-consumer';
+import { lazyQueueUrl } from '@messaging/infrastructure/sqs/queue-provisioning';
+import { createSqsClient } from '@messaging/infrastructure/sqs/sqs-client';
+import type { AppConfig } from '@platform/config/app-config';
+import { PollingLoop } from '@platform/lifecycle/polling-loop';
+import { APP_CONFIG, CLOCK, PAYLOAD_FINGERPRINTER } from '@platform/tokens';
+import type { Clock } from '@shared/application/clock';
+import type { PayloadFingerprinter } from '@shared/application/payload-fingerprinter';
+import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
+import { SubmitWagerTransaction } from '@wallet/application/use-cases/submit-wager-transaction';
+import { WalletModule } from '@wallet/infrastructure/wallet.module';
+import { WagerMessageHandler } from './wager-message-handler';
 
-export const CONSUMER_SQS_CLIENT = Symbol("CONSUMER_SQS_CLIENT");
+export const CONSUMER_SQS_CLIENT = Symbol('CONSUMER_SQS_CLIENT');
 
 const log = (entry: Record<string, unknown>) =>
   process.stdout.write(`${JSON.stringify(entry)}\n`);
@@ -34,37 +34,37 @@ function errorName(error: unknown): string {
 
 function logConsumerEvent(event: ConsumerEvent): void {
   switch (event.type) {
-    case "handled":
-      if (event.disposition.action === "dead_letter") {
+    case 'handled':
+      if (event.disposition.action === 'dead_letter') {
         log({
-          level: "warn",
-          msg: "message sent to the dead-letter queue",
+          level: 'warn',
+          msg: 'message sent to the dead-letter queue',
           sqsMessageId: event.message.sqsMessageId,
           reason: event.disposition.reason,
         });
-      } else if (event.disposition.action === "retry") {
+      } else if (event.disposition.action === 'retry') {
         log({
-          level: "warn",
-          msg: "message will be retried",
+          level: 'warn',
+          msg: 'message will be retried',
           sqsMessageId: event.message.sqsMessageId,
           receiveCount: event.message.receiveCount,
           delaySeconds: event.disposition.delaySeconds,
         });
       }
       return;
-    case "handler_failed":
-    case "dead_letter_failed":
+    case 'handler_failed':
+    case 'dead_letter_failed':
       log({
-        level: "error",
-        msg: event.type.replace("_", " "),
+        level: 'error',
+        msg: event.type.replace('_', ' '),
         sqsMessageId: event.message.sqsMessageId,
         errorName: errorName(event.error),
       });
       return;
-    case "queue_call_failed":
+    case 'queue_call_failed':
       log({
-        level: "error",
-        msg: "queue call failed",
+        level: 'error',
+        msg: 'queue call failed',
         operation: event.operation,
         errorName: errorName(event.error),
       });
@@ -95,8 +95,8 @@ export class WagerConsumerRunner
       errorBackoff: ExponentialBackoff.create({ baseMs: 1000, maxMs: 30_000 }),
       onError: (error, consecutiveFailures) =>
         log({
-          level: "error",
-          msg: "wager consumer paused",
+          level: 'error',
+          msg: 'wager consumer paused',
           errorName: errorName(error),
           consecutiveFailures,
         }),

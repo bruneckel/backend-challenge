@@ -1,4 +1,9 @@
-export type TransientReason = 'lock_timeout' | 'deadlock' | 'serialization_failure' | 'statement_timeout' | 'connection';
+export type TransientReason =
+  | 'lock_timeout'
+  | 'deadlock'
+  | 'serialization_failure'
+  | 'statement_timeout'
+  | 'connection';
 
 export class TransientFailure extends Error {
   constructor(

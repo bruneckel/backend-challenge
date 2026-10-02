@@ -21,7 +21,10 @@ export const OutboxMessageRecord = defineEntity({
 
 export type OutboxMessageRow = InferEntity<typeof OutboxMessageRecord>;
 
-export type OutboxDelivery = Pick<OutboxMessageRow, 'attempts' | 'nextAttemptAt' | 'publishedAt' | 'lastError'>;
+export type OutboxDelivery = Pick<
+  OutboxMessageRow,
+  'attempts' | 'nextAttemptAt' | 'publishedAt' | 'lastError'
+>;
 
 export function toOutboxDelivery(message: OutboxMessage): OutboxDelivery {
   const state = message.toState();

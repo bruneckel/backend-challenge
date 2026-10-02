@@ -1,10 +1,17 @@
-import { IntegrationEvent, type EventContext, type IntegrationEventProps } from '@messaging/domain/integration-event';
+import {
+  IntegrationEvent,
+  type EventContext,
+  type IntegrationEventProps,
+} from '@messaging/domain/integration-event';
 import {
   InvalidTransactionStateError,
   WagerTransactionStatus,
   type WagerTransaction,
 } from '@wallet/domain/transaction/wager-transaction';
-import { transactionEventData, type TransactionEventData } from './transaction-event-data';
+import {
+  transactionEventData,
+  type TransactionEventData,
+} from './transaction-event-data';
 
 export interface WagerTransactionPendingReferenceData extends TransactionEventData {
   referenceExternalTransactionId: string;
@@ -15,18 +22,26 @@ export class WagerTransactionPendingReference extends IntegrationEvent<WagerTran
   override readonly eventType = 'WagerTransactionPendingReference';
   override readonly version = 1;
 
-  private constructor(props: IntegrationEventProps<WagerTransactionPendingReferenceData>) {
+  private constructor(
+    props: IntegrationEventProps<WagerTransactionPendingReferenceData>,
+  ) {
     super(props);
   }
 
-  static from(transaction: WagerTransaction, context: EventContext): WagerTransactionPendingReference {
-    const { referenceExternalTransactionId, nextReferenceAttemptAt } = transaction;
+  static from(
+    transaction: WagerTransaction,
+    context: EventContext,
+  ): WagerTransactionPendingReference {
+    const { referenceExternalTransactionId, nextReferenceAttemptAt } =
+      transaction;
     if (
       transaction.status !== WagerTransactionStatus.PendingReference ||
       referenceExternalTransactionId === undefined ||
       nextReferenceAttemptAt === undefined
     ) {
-      throw new InvalidTransactionStateError(`Transaction ${transaction.id} is not waiting for its reference`);
+      throw new InvalidTransactionStateError(
+        `Transaction ${transaction.id} is not waiting for its reference`,
+      );
     }
     return new WagerTransactionPendingReference({
       ...context,

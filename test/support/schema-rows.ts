@@ -48,7 +48,11 @@ export function transactionRow(wallet: Row, overrides: Row = {}): Row {
   };
 }
 
-export const rejected: Row = { status: 'REJECTED', failure_code: 'INSUFFICIENT_FUNDS', processed_at: null };
+export const rejected: Row = {
+  status: 'REJECTED',
+  failure_code: 'INSUFFICIENT_FUNDS',
+  processed_at: null,
+};
 
 export const failed: Row = {
   status: 'FAILED',
@@ -66,7 +70,11 @@ export const pendingReference: Row = {
   next_reference_attempt_at: LATER,
 };
 
-export function referencing(reference: Row, kind: 'WIN' | 'LOSS' | 'REFUND' | 'ROLLBACK', overrides: Row = {}): Row {
+export function referencing(
+  reference: Row,
+  kind: 'WIN' | 'LOSS' | 'REFUND' | 'ROLLBACK',
+  overrides: Row = {},
+): Row {
   return {
     kind,
     amount: reference.amount,
@@ -137,6 +145,9 @@ export function outboxRow(overrides: Row = {}): Row {
   };
 }
 
-export function requiredColumns(row: Row, nullable: readonly string[] = []): string[] {
+export function requiredColumns(
+  row: Row,
+  nullable: readonly string[] = [],
+): string[] {
   return Object.keys(row).filter((column) => !nullable.includes(column));
 }

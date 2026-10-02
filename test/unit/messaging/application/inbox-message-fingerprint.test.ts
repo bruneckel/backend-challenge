@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { type InboundMessage, inboxMessagePayload } from '@messaging/application/inbound-message';
+import {
+  type InboundMessage,
+  inboxMessagePayload,
+} from '@messaging/application/inbound-message';
 import { CanonicalJsonFingerprinter } from '@platform/crypto/canonical-json-fingerprinter';
 
 const fingerprinter = new CanonicalJsonFingerprinter();
@@ -21,24 +24,38 @@ const message: InboundMessage = {
   },
 };
 
-const hashOf = (value: InboundMessage) => fingerprinter.fingerprint(inboxMessagePayload(value));
+const hashOf = (value: InboundMessage) =>
+  fingerprinter.fingerprint(inboxMessagePayload(value));
 
 describe('inbox message fingerprint', () => {
   test('matches the documented SHA-256 of the canonical type and data', () => {
-    expect(hashOf(message)).toBe('c0c6bae37f6ceee9f633907ef9c19bdbf43fbf3570e3bf0a66a09dda29ef9437');
+    expect(hashOf(message)).toBe(
+      'c0c6bae37f6ceee9f633907ef9c19bdbf43fbf3570e3bf0a66a09dda29ef9437',
+    );
   });
 
   test('ignores the message id and the time the message was sent', () => {
-    expect(hashOf({ ...message, messageId: 'msg-999', occurredAt: '2026-07-30T00:00:00.000Z' })).toBe(hashOf(message));
+    expect(
+      hashOf({
+        ...message,
+        messageId: 'msg-999',
+        occurredAt: '2026-07-30T00:00:00.000Z',
+      }),
+    ).toBe(hashOf(message));
   });
 
   test('includes the idempotency key carried in the data', () => {
-    const otherKey = { ...message, data: { ...message.data, idempotencyKey: 'provider-a:transaction-999' } };
+    const otherKey = {
+      ...message,
+      data: { ...message.data, idempotencyKey: 'provider-a:transaction-999' },
+    };
 
     expect(hashOf(otherKey)).not.toBe(hashOf(message));
   });
 
   test('includes the message type', () => {
-    expect(hashOf({ ...message, type: 'SomethingElse' })).not.toBe(hashOf(message));
+    expect(hashOf({ ...message, type: 'SomethingElse' })).not.toBe(
+      hashOf(message),
+    );
   });
 });

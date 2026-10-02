@@ -18,24 +18,51 @@ export interface ApiHarness {
   readonly database: TestDatabase;
   readonly app: INestApplication;
   readonly baseUrl: string;
-  request(method: string, path: string, options?: RequestOptions): Promise<ApiResponse>;
+  request(
+    method: string,
+    path: string,
+    options?: RequestOptions,
+  ): Promise<ApiResponse>;
   close(): Promise<void>;
 }
 
-export async function requestApi(baseUrl: string, method: string, path: string, options: RequestOptions = {}): Promise<ApiResponse> {
+export async function requestApi(
+  baseUrl: string,
+  method: string,
+  path: string,
+  options: RequestOptions = {},
+): Promise<ApiResponse> {
   const { body, headers = {} } = options;
   const response = await fetch(`${baseUrl}${path}`, {
     method,
-    headers: body === undefined ? headers : { 'content-type': 'application/json', ...headers },
-    body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
+    headers:
+      body === undefined
+        ? headers
+        : { 'content-type': 'application/json', ...headers },
+    body:
+      body === undefined
+        ? undefined
+        : typeof body === 'string'
+          ? body
+          : JSON.stringify(body),
   });
   const text = await response.text();
-  return { status: response.status, headers: response.headers, body: text === '' ? undefined : JSON.parse(text) };
+  return {
+    status: response.status,
+    headers: response.headers,
+    body: text === '' ? undefined : JSON.parse(text),
+  };
 }
 
-export async function startApi(environment: Record<string, string> = {}): Promise<ApiHarness> {
+export async function startApi(
+  environment: Record<string, string> = {},
+): Promise<ApiHarness> {
   const database = await createMigratedDatabase();
-  const config = loadConfig({ DATABASE_URL: database.url, PORT: '0', ...environment });
+  const config = loadConfig({
+    DATABASE_URL: database.url,
+    PORT: '0',
+    ...environment,
+  });
   const app = await createApiApplication(config, { logger: false });
   await app.listen(0, '127.0.0.1');
   const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
@@ -43,7 +70,8 @@ export async function startApi(environment: Record<string, string> = {}): Promis
     database,
     app,
     baseUrl,
-    request: (method, path, options) => requestApi(baseUrl, method, path, options),
+    request: (method, path, options) =>
+      requestApi(baseUrl, method, path, options),
     async close() {
       await app.close();
       await database.drop();

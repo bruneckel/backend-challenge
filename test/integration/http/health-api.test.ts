@@ -24,7 +24,10 @@ describe('health endpoints', () => {
     const response = await api.request('GET', '/health/ready');
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ status: 'ready', checks: { database: 'up' } });
+    expect(response.body).toEqual({
+      status: 'ready',
+      checks: { database: 'up' },
+    });
   });
 
   test('GET /health/ready answers 503 once shutdown has started', async () => {

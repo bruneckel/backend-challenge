@@ -87,7 +87,9 @@ describe('Wallet.debit', () => {
   test('refuses to go below zero and leaves the wallet untouched', () => {
     const wallet = walletWith('20.00');
 
-    expect(() => wallet.debit(brl('80.00'), movement)).toThrow(InsufficientFundsError);
+    expect(() => wallet.debit(brl('80.00'), movement)).toThrow(
+      InsufficientFundsError,
+    );
     expect(wallet.balance.toString()).toBe('20.00');
     expect(wallet.version).toBe(1);
     expect(wallet.updatedAt).toEqual(AT);
@@ -112,16 +114,24 @@ describe('Wallet movement guards', () => {
   test('refuses another currency and leaves the wallet untouched', () => {
     const wallet = walletWith('100.00');
 
-    expect(() => wallet.debit(usd('1.00'), movement)).toThrow(CurrencyMismatchError);
-    expect(() => wallet.credit(usd('1.00'), movement)).toThrow(CurrencyMismatchError);
+    expect(() => wallet.debit(usd('1.00'), movement)).toThrow(
+      CurrencyMismatchError,
+    );
+    expect(() => wallet.credit(usd('1.00'), movement)).toThrow(
+      CurrencyMismatchError,
+    );
     expect(wallet.version).toBe(1);
   });
 
   test('refuses a zero movement', () => {
     const wallet = walletWith('100.00');
 
-    expect(() => wallet.credit(brl('0.00'), movement)).toThrow(NonPositiveMovementError);
-    expect(() => wallet.debit(brl('0.00'), movement)).toThrow(NonPositiveMovementError);
+    expect(() => wallet.credit(brl('0.00'), movement)).toThrow(
+      NonPositiveMovementError,
+    );
+    expect(() => wallet.debit(brl('0.00'), movement)).toThrow(
+      NonPositiveMovementError,
+    );
   });
 
   test('tells whether a debit fits the balance', () => {

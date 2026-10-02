@@ -2,9 +2,16 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rejectionOf } from '@test/support/async';
 import { commandFor } from '@test/support/commands';
 import { insertRow } from '@test/support/database';
-import { type PersistenceHarness, createPersistenceHarness } from '@test/support/persistence';
+import {
+  type PersistenceHarness,
+  createPersistenceHarness,
+} from '@test/support/persistence';
 import { ledgerRow, transactionRow } from '@test/support/schema-rows';
-import { type Wagering, createWagering, openWalletWith } from '@test/support/wagering';
+import {
+  type Wagering,
+  createWagering,
+  openWalletWith,
+} from '@test/support/wagering';
 import { WalletNotFoundError } from '@wallet/application/errors';
 import { WagerTransactionKind } from '@wallet/domain/transaction/wager-transaction';
 
@@ -51,7 +58,8 @@ describe('ReconcileWallet', () => {
 
   test('flags a stored balance that drifted from the ledger without fixing it', async () => {
     const wallet = await openWalletWith(wagering, '100.00');
-    await harness.database.sql`update wallets set balance_amount = '101.50' where id = ${wallet.id}`;
+    await harness.database
+      .sql`update wallets set balance_amount = '101.50' where id = ${wallet.id}`;
 
     const report = await wagering.reconcile.execute(wallet.id);
 
@@ -61,19 +69,32 @@ describe('ReconcileWallet', () => {
       difference: brl('1.50'),
       consistent: false,
     });
-    const [stored] = await harness.database.sql`select balance_amount::text as balance from wallets where id = ${wallet.id}`;
+    const [stored] = await harness.database
+      .sql`select balance_amount::text as balance from wallets where id = ${wallet.id}`;
     expect(stored.balance).toBe('101.50');
   });
 
   test('reports a negative calculated balance when the ledger is corrupted', async () => {
     const wallet = await openWalletWith(wagering, '50.00');
-    const walletRow = { id: wallet.id, player_id: wallet.playerId, currency: 'BRL' };
-    const bet = transactionRow(walletRow, { amount: '100.00', result_balance_amount: '0.00' });
+    const walletRow = {
+      id: wallet.id,
+      player_id: wallet.playerId,
+      currency: 'BRL',
+    };
+    const bet = transactionRow(walletRow, {
+      amount: '100.00',
+      result_balance_amount: '0.00',
+    });
     await insertRow(harness.database.sql, 'wager_transactions', bet);
     await insertRow(
       harness.database.sql,
       'wallet_ledger_entries',
-      ledgerRow(bet, { wallet_version: 2, amount: '100.00', balance_before: '100.00', balance_after: '0.00' }),
+      ledgerRow(bet, {
+        wallet_version: 2,
+        amount: '100.00',
+        balance_before: '100.00',
+        balance_after: '0.00',
+      }),
     );
 
     expect(await wagering.reconcile.execute(wallet.id)).toEqual({
@@ -87,6 +108,8 @@ describe('ReconcileWallet', () => {
   });
 
   test('reports an unknown wallet as not found', async () => {
-    expect(await rejectionOf(wagering.reconcile.execute(Bun.randomUUIDv7()))).toBeInstanceOf(WalletNotFoundError);
+    expect(
+      await rejectionOf(wagering.reconcile.execute(Bun.randomUUIDv7())),
+    ).toBeInstanceOf(WalletNotFoundError);
   });
 });

@@ -24,14 +24,22 @@ export class ExponentialBackoff {
     if (!(factor >= 1)) {
       throw new RangeError('factor must be at least 1');
     }
-    return new ExponentialBackoff(options.baseMs, options.maxMs, factor, options.random ?? Math.random);
+    return new ExponentialBackoff(
+      options.baseMs,
+      options.maxMs,
+      factor,
+      options.random ?? Math.random,
+    );
   }
 
   delayFor(attempt: number): number {
     if (!Number.isInteger(attempt) || attempt < 1) {
       throw new RangeError('attempt must be a positive integer');
     }
-    const fullDelay = Math.min(this.baseMs * this.factor ** (attempt - 1), this.maxMs);
+    const fullDelay = Math.min(
+      this.baseMs * this.factor ** (attempt - 1),
+      this.maxMs,
+    );
     return Math.round(fullDelay * (0.5 + 0.5 * this.random()));
   }
 

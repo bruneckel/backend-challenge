@@ -41,7 +41,10 @@ export class InvalidTransactionStateError extends DomainError {
   override readonly code = 'INVALID_TRANSACTION_STATE';
 }
 
-export type SubmittableKind = Exclude<WagerTransactionKind, WagerTransactionKind.Opening>;
+export type SubmittableKind = Exclude<
+  WagerTransactionKind,
+  WagerTransactionKind.Opening
+>;
 
 export interface CreateWagerTransactionProps {
   id: string;
@@ -155,19 +158,38 @@ export class WagerTransaction {
   static create(props: CreateWagerTransactionProps): WagerTransaction {
     const kind = props.kind as WagerTransactionKind;
     if (kind === WagerTransactionKind.Opening) {
-      throw new InvalidWagerTransactionError('UNSUPPORTED_KIND', 'OPENING is internal and cannot be submitted');
+      throw new InvalidWagerTransactionError(
+        'UNSUPPORTED_KIND',
+        'OPENING is internal and cannot be submitted',
+      );
     }
     const hasReference = props.referenceExternalTransactionId !== undefined;
-    if ((kind === WagerTransactionKind.Refund || kind === WagerTransactionKind.Rollback) && !hasReference) {
-      throw new InvalidWagerTransactionError('REFERENCE_REQUIRED', `${kind} requires a reference`);
+    if (
+      (kind === WagerTransactionKind.Refund ||
+        kind === WagerTransactionKind.Rollback) &&
+      !hasReference
+    ) {
+      throw new InvalidWagerTransactionError(
+        'REFERENCE_REQUIRED',
+        `${kind} requires a reference`,
+      );
     }
     if (kind === WagerTransactionKind.Bet && hasReference) {
-      throw new InvalidWagerTransactionError('REFERENCE_NOT_ALLOWED', 'BET cannot reference another transaction');
+      throw new InvalidWagerTransactionError(
+        'REFERENCE_NOT_ALLOWED',
+        'BET cannot reference another transaction',
+      );
     }
     if (kind !== WagerTransactionKind.Loss && !props.money.isPositive()) {
-      throw new InvalidWagerTransactionError('INVALID_AMOUNT', `${kind} requires a positive amount`);
+      throw new InvalidWagerTransactionError(
+        'INVALID_AMOUNT',
+        `${kind} requires a positive amount`,
+      );
     }
-    return WagerTransaction.pending({ ...props, referenceExternalTransactionId: props.referenceExternalTransactionId });
+    return WagerTransaction.pending({
+      ...props,
+      referenceExternalTransactionId: props.referenceExternalTransactionId,
+    });
   }
 
   static opening(props: OpeningTransactionProps): WagerTransaction {
@@ -195,7 +217,10 @@ export class WagerTransaction {
   }
 
   private static pending(
-    props: Omit<CreateWagerTransactionProps, 'kind' | 'referenceExternalTransactionId'> & {
+    props: Omit<
+      CreateWagerTransactionProps,
+      'kind' | 'referenceExternalTransactionId'
+    > & {
       kind: WagerTransactionKind;
       referenceExternalTransactionId: string | undefined;
     },
@@ -245,7 +270,11 @@ export class WagerTransaction {
     return this._updatedAt;
   }
 
-  markProcessed(referenceTransactionId: string | undefined, resultBalance: Money, at: Date): void {
+  markProcessed(
+    referenceTransactionId: string | undefined,
+    resultBalance: Money,
+    at: Date,
+  ): void {
     this.assertNotTerminal();
     this._status = WagerTransactionStatus.Processed;
     this._referenceTransactionId = referenceTransactionId;
@@ -255,9 +284,15 @@ export class WagerTransaction {
     this._updatedAt = at;
   }
 
-  markPendingReference(observedBalance: Money, nextAttemptAt: Date, at: Date): void {
+  markPendingReference(
+    observedBalance: Money,
+    nextAttemptAt: Date,
+    at: Date,
+  ): void {
     if (this._status !== WagerTransactionStatus.Pending) {
-      throw new InvalidTransactionStateError(`Transaction ${this.id} is ${this._status} and cannot start waiting`);
+      throw new InvalidTransactionStateError(
+        `Transaction ${this.id} is ${this._status} and cannot start waiting`,
+      );
     }
     this._status = WagerTransactionStatus.PendingReference;
     this._resultBalance = observedBalance;
@@ -267,7 +302,9 @@ export class WagerTransaction {
 
   scheduleReferenceRetry(nextAttemptAt: Date, at: Date): void {
     if (this._status !== WagerTransactionStatus.PendingReference) {
-      throw new InvalidTransactionStateError(`Transaction ${this.id} is ${this._status} and is not waiting`);
+      throw new InvalidTransactionStateError(
+        `Transaction ${this.id} is ${this._status} and is not waiting`,
+      );
     }
     this._referenceAttempts += 1;
     this._nextReferenceAttemptAt = nextAttemptAt;
@@ -300,7 +337,10 @@ export class WagerTransaction {
   }
 
   requiresReference(): boolean {
-    return this.kind === WagerTransactionKind.Refund || this.kind === WagerTransactionKind.Rollback;
+    return (
+      this.kind === WagerTransactionKind.Refund ||
+      this.kind === WagerTransactionKind.Rollback
+    );
   }
 
   matchesPayload(payloadHash: string): boolean {
@@ -316,12 +356,20 @@ export class WagerTransaction {
       case WagerTransactionKind.Opening:
         return LedgerDirection.Credit;
       case WagerTransactionKind.Loss:
-        throw new InvalidWagerTransactionError('NO_BALANCE_EFFECT', 'LOSS does not move the balance');
+        throw new InvalidWagerTransactionError(
+          'NO_BALANCE_EFFECT',
+          'LOSS does not move the balance',
+        );
       case WagerTransactionKind.Rollback:
         if (reference === undefined) {
-          throw new InvalidWagerTransactionError('REFERENCE_UNKNOWN', 'ROLLBACK needs its reference to know the direction');
+          throw new InvalidWagerTransactionError(
+            'REFERENCE_UNKNOWN',
+            'ROLLBACK needs its reference to know the direction',
+          );
         }
-        return reference.ledgerDirectionFor() === LedgerDirection.Debit ? LedgerDirection.Credit : LedgerDirection.Debit;
+        return reference.ledgerDirectionFor() === LedgerDirection.Debit
+          ? LedgerDirection.Credit
+          : LedgerDirection.Debit;
     }
   }
 
@@ -354,7 +402,9 @@ export class WagerTransaction {
 
   private assertNotTerminal(): void {
     if (this.isTerminal()) {
-      throw new InvalidTransactionStateError(`Transaction ${this.id} is ${this._status} and cannot change`);
+      throw new InvalidTransactionStateError(
+        `Transaction ${this.id} is ${this._status} and cannot change`,
+      );
     }
   }
 }

@@ -17,8 +17,13 @@ export interface PersistenceHarness {
 
 export async function createPersistenceHarness(): Promise<PersistenceHarness> {
   const database = await createMigratedDatabase();
-  const orm = await createOrm({ databaseUrl: database.url, entities: [...walletEntities, ...messagingEntities] });
-  const unitOfWork = new MikroOrmUnitOfWork(orm, createWageringScope, { lockTimeoutMs: 2000 });
+  const orm = await createOrm({
+    databaseUrl: database.url,
+    entities: [...walletEntities, ...messagingEntities],
+  });
+  const unitOfWork = new MikroOrmUnitOfWork(orm, createWageringScope, {
+    lockTimeoutMs: 2000,
+  });
   return {
     database,
     orm,

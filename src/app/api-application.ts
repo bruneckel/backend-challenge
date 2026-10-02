@@ -8,7 +8,12 @@ export interface ApplicationOptions {
   logger?: false | LogLevel[];
 }
 
-export async function createApiApplication(config: AppConfig, options: ApplicationOptions = {}): Promise<INestApplication> {
-  const app = await NestFactory.create(ApiModule.forRoot(config), { logger: options.logger ?? ['error', 'warn'] });
+export async function createApiApplication(
+  config: AppConfig,
+  options: ApplicationOptions = {},
+): Promise<INestApplication> {
+  const app = await NestFactory.create(ApiModule.forRoot(config), {
+    logger: options.logger ?? ['error', 'warn'],
+  });
   return configureHttpApplication(app);
 }

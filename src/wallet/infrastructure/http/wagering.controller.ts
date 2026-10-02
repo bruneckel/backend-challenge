@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Inject, Param, Post, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Param,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import type { ProviderIdentityPort } from '@platform/auth/provider-identity';
 import { CorrelationId } from '@platform/http/correlation';
 import { IdempotencyKey } from '@platform/http/idempotency-key';
@@ -55,21 +64,30 @@ export class WageringController {
     });
     response.status(HTTP_STATUS[result.status]);
     if (result.status === 'PENDING_REFERENCE') {
-      response.setHeader('Location', `/wagering/transactions/${result.transactionId}`);
+      response.setHeader(
+        'Location',
+        `/wagering/transactions/${result.transactionId}`,
+      );
     }
     return result;
   }
 
   @Get('wagering/transactions/:transactionId')
-  show(@Param('transactionId', { schema: uuidParam }) transactionId: string): Promise<TransactionView> {
+  show(
+    @Param('transactionId', { schema: uuidParam }) transactionId: string,
+  ): Promise<TransactionView> {
     return this.queries.getTransaction(transactionId);
   }
 
   @Get('providers/:providerId/wagering/transactions/:externalTransactionId')
   showByExternalId(
     @Param('providerId', { schema: providerIdParam }) providerId: string,
-    @Param('externalTransactionId', { schema: externalTransactionIdParam }) externalTransactionId: string,
+    @Param('externalTransactionId', { schema: externalTransactionIdParam })
+    externalTransactionId: string,
   ): Promise<TransactionView> {
-    return this.queries.getTransactionByExternalId(providerId, externalTransactionId);
+    return this.queries.getTransactionByExternalId(
+      providerId,
+      externalTransactionId,
+    );
   }
 }

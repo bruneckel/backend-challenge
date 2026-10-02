@@ -7,17 +7,20 @@ const numberGuardMessage =
 
 const parentRelativeImports = {
   group: ['../*', '../**'],
-  message: 'Use a path alias such as @wallet/... or @shared/... instead of a parent-relative import.',
+  message:
+    'Use a path alias such as @wallet/... or @shared/... instead of a parent-relative import.',
 };
 
 const layerBoundaryImports = [
   {
     group: ['@aws-sdk/*', '@mikro-orm/*', '@nestjs/*', 'pg', 'kysely'],
-    message: 'Domain and application code cannot depend on frameworks, drivers or the SQS client; depend on a port.',
+    message:
+      'Domain and application code cannot depend on frameworks, drivers or the SQS client; depend on a port.',
   },
   {
     group: ['@platform/*', '@*/infrastructure/**'],
-    message: 'Domain and application code cannot import infrastructure; depend on a port.',
+    message:
+      'Domain and application code cannot import infrastructure; depend on a port.',
   },
 ];
 
@@ -45,7 +48,10 @@ export default defineConfig(
   {
     files: ['src/**/application/**/*.ts'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [parentRelativeImports, ...layerBoundaryImports] }],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [parentRelativeImports, ...layerBoundaryImports] },
+      ],
     },
   },
   {
@@ -53,7 +59,13 @@ export default defineConfig(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [parentRelativeImports, ...layerBoundaryImports, domainBoundaryImports] },
+        {
+          patterns: [
+            parentRelativeImports,
+            ...layerBoundaryImports,
+            domainBoundaryImports,
+          ],
+        },
       ],
     },
   },
@@ -67,13 +79,20 @@ export default defineConfig(
       ],
       'no-restricted-properties': [
         'error',
-        { object: 'Number', property: 'parseFloat', message: numberGuardMessage },
+        {
+          object: 'Number',
+          property: 'parseFloat',
+          message: numberGuardMessage,
+        },
         { object: 'Number', property: 'parseInt', message: numberGuardMessage },
         { property: 'toNumber', message: numberGuardMessage },
       ],
       'no-restricted-syntax': [
         'error',
-        { selector: "CallExpression[callee.name='Number']", message: numberGuardMessage },
+        {
+          selector: "CallExpression[callee.name='Number']",
+          message: numberGuardMessage,
+        },
       ],
     },
   },

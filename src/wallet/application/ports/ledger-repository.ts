@@ -15,6 +15,11 @@ export interface ReconciliationSnapshot {
 
 export interface LedgerRepository {
   append(entry: WalletLedgerEntry): Promise<void>;
-  page(walletId: string, request: LedgerPageRequest): Promise<WalletLedgerEntry[]>;
-  reconciliationSnapshot(walletId: string): Promise<ReconciliationSnapshot | null>;
+  page(
+    walletId: string,
+    request: LedgerPageRequest,
+  ): Promise<WalletLedgerEntry[]>;
+  reconciliationSnapshot(
+    walletId: string,
+  ): Promise<ReconciliationSnapshot | null>;
 }

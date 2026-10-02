@@ -17,7 +17,9 @@ const { values } = parseArgs({
 });
 
 if (values.wallet === undefined || values.player === undefined) {
-  process.stderr.write('usage: bun run demo:send-message --wallet <walletId> --player <playerId> [--kind BET] [--amount 10.00] [--currency BRL] [--reference <externalTransactionId>]\n');
+  process.stderr.write(
+    'usage: bun run demo:send-message --wallet <walletId> --player <playerId> [--kind BET] [--amount 10.00] [--currency BRL] [--reference <externalTransactionId>]\n',
+  );
   process.exit(1);
 }
 
@@ -39,7 +41,9 @@ const message = {
     gameId: 'demo-game',
     kind: values.kind,
     money: { amount: values.amount, currency: values.currency },
-    ...(values.reference === undefined ? {} : { referenceExternalTransactionId: values.reference }),
+    ...(values.reference === undefined
+      ? {}
+      : { referenceExternalTransactionId: values.reference }),
   },
 };
 
@@ -51,5 +55,7 @@ const { MessageId } = await client.send(
     MessageDeduplicationId: messageId,
   }),
 );
-process.stdout.write(`${JSON.stringify({ level: 'info', msg: 'demo message sent', messageId, sqsMessageId: MessageId, externalTransactionId })}\n`);
+process.stdout.write(
+  `${JSON.stringify({ level: 'info', msg: 'demo message sent', messageId, sqsMessageId: MessageId, externalTransactionId })}\n`,
+);
 client.destroy();

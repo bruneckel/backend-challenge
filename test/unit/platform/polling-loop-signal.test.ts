@@ -9,7 +9,9 @@ describe('PollingLoop stop signal', () => {
     const loop = new PollingLoop({
       step: async (signal) => {
         seen = signal;
-        await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
+        await new Promise<void>((resolve) =>
+          signal.addEventListener('abort', () => resolve(), { once: true }),
+        );
         return false;
       },
       idleDelayMs: 10,

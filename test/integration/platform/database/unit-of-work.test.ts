@@ -5,7 +5,12 @@ import { createOrm } from '@platform/database/orm';
 import { TransientFailure } from '@shared/application/transient-failure';
 import { NestedUnitOfWorkError } from '@shared/application/unit-of-work';
 import { rejectionOf } from '@test/support/async';
-import { type Row, type TestDatabase, createMigratedDatabase, insertRow } from '@test/support/database';
+import {
+  type Row,
+  type TestDatabase,
+  createMigratedDatabase,
+  insertRow,
+} from '@test/support/database';
 import { walletRow } from '@test/support/schema-rows';
 
 interface RawScope {
@@ -18,8 +23,15 @@ let unitOfWork: MikroOrmUnitOfWork<RawScope>;
 
 beforeAll(async () => {
   database = await createMigratedDatabase();
-  orm = await createOrm({ databaseUrl: database.url, entities: [], statementTimeoutMs: 5000, idleInTransactionTimeoutMs: 7000 });
-  unitOfWork = new MikroOrmUnitOfWork(orm, (em) => ({ em }), { lockTimeoutMs: 200 });
+  orm = await createOrm({
+    databaseUrl: database.url,
+    entities: [],
+    statementTimeoutMs: 5000,
+    idleInTransactionTimeoutMs: 7000,
+  });
+  unitOfWork = new MikroOrmUnitOfWork(orm, (em) => ({ em }), {
+    lockTimeoutMs: 200,
+  });
 });
 
 afterAll(async () => {
@@ -30,7 +42,15 @@ afterAll(async () => {
 function insertWallet(em: EntityManager, row: Row): Promise<unknown> {
   return em.execute(
     'insert into wallets (id, player_id, currency, balance_amount, version, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)',
-    [row.id, row.player_id, row.currency, row.balance_amount, row.version, row.created_at, row.updated_at],
+    [
+      row.id,
+      row.player_id,
+      row.currency,
+      row.balance_amount,
+      row.version,
+      row.created_at,
+      row.updated_at,
+    ],
   );
 }
 
@@ -86,17 +106,24 @@ describe('MikroOrmUnitOfWork', () => {
       }),
     ]);
 
-    expect(results.map((result) => result.status)).toEqual(['fulfilled', 'rejected']);
+    expect(results.map((result) => result.status)).toEqual([
+      'fulfilled',
+      'rejected',
+    ]);
     expect(await walletExists(committed.id)).toBe(true);
     expect(await walletExists(rolledBack.id)).toBe(false);
   });
 
   test('runs in READ COMMITTED', async () => {
-    expect(await unitOfWork.run(({ em }) => setting(em, 'transaction_isolation'))).toBe('read committed');
+    expect(
+      await unitOfWork.run(({ em }) => setting(em, 'transaction_isolation')),
+    ).toBe('read committed');
   });
 
   test('sets the lock timeout for its own transaction only', async () => {
-    expect(await unitOfWork.run(({ em }) => setting(em, 'lock_timeout'))).toBe('200ms');
+    expect(await unitOfWork.run(({ em }) => setting(em, 'lock_timeout'))).toBe(
+      '200ms',
+    );
     expect(await setting(orm.em.fork(), 'lock_timeout')).toBe('0');
   });
 
@@ -117,7 +144,9 @@ describe('MikroOrmUnitOfWork', () => {
   });
 
   test('refuses nesting across different units of work', async () => {
-    const other = new MikroOrmUnitOfWork(orm, (em) => ({ em }), { lockTimeoutMs: 200 });
+    const other = new MikroOrmUnitOfWork(orm, (em) => ({ em }), {
+      lockTimeoutMs: 200,
+    });
 
     const outer = unitOfWork.run(() => other.run(async () => 'inner'));
 
@@ -137,13 +166,19 @@ describe('MikroOrmUnitOfWork', () => {
     });
 
     const holder = unitOfWork.run(async ({ em }) => {
-      await em.execute('select id from wallets where id = ? for update', [wallet.id]);
+      await em.execute('select id from wallets where id = ? for update', [
+        wallet.id,
+      ]);
       signalLocked();
       await held;
     });
     await locked;
     const failure = await rejectionOf(
-      unitOfWork.run(({ em }) => em.execute('select id from wallets where id = ? for update', [wallet.id])),
+      unitOfWork.run(({ em }) =>
+        em.execute('select id from wallets where id = ? for update', [
+          wallet.id,
+        ]),
+      ),
     );
     release();
     await holder;

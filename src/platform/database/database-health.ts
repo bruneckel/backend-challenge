@@ -9,7 +9,9 @@ export class DatabaseHealth {
 
   async isReachable(): Promise<boolean> {
     try {
-      await this.orm.em.fork().execute('select 1', [], { signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) });
+      await this.orm.em.fork().execute('select 1', [], {
+        signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
+      });
       return true;
     } catch {
       return false;

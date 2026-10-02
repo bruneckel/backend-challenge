@@ -57,11 +57,20 @@ export class InvalidConfigurationError extends Error {
   }
 }
 
-const integer = (fallback: number, min: number, max = Number.MAX_SAFE_INTEGER) =>
-  z.coerce.number().int().min(min).max(max).default(fallback);
+const integer = (
+  fallback: number,
+  min: number,
+  max = Number.MAX_SAFE_INTEGER,
+) => z.coerce.number().int().min(min).max(max).default(fallback);
 
 const fifoQueue = (fallback: string) =>
-  z.string().regex(/^[A-Za-z0-9_-]{1,75}\.fifo$/, 'must be a FIFO queue name ending in .fifo').default(fallback);
+  z
+    .string()
+    .regex(
+      /^[A-Za-z0-9_-]{1,75}\.fifo$/,
+      'must be a FIFO queue name ending in .fifo',
+    )
+    .default(fallback);
 
 const toggle = (fallback: boolean) =>
   z
@@ -73,10 +82,16 @@ const environmentSchema = z
   .object({
     DATABASE_URL: z
       .string()
-      .regex(/^postgres(ql)?:\/\/\S+$/, 'must be a postgres:// or postgresql:// URL')
+      .regex(
+        /^postgres(ql)?:\/\/\S+$/,
+        'must be a postgres:// or postgresql:// URL',
+      )
       .default('postgresql://wagering:wagering@localhost:5432/wagering'),
     PORT: integer(3000, 0, 65535),
-    INSTANCE_ID: z.string().regex(/^[\x21-\x7e]{1,64}$/, 'must be 1 to 64 visible ASCII characters').optional(),
+    INSTANCE_ID: z
+      .string()
+      .regex(/^[\x21-\x7e]{1,64}$/, 'must be 1 to 64 visible ASCII characters')
+      .optional(),
     DB_POOL_SIZE: integer(10, 1),
     DB_LOCK_TIMEOUT_MS: integer(3000, 1),
     DB_STATEMENT_TIMEOUT_MS: integer(10_000, 1),
@@ -85,7 +100,10 @@ const environmentSchema = z
     REFERENCE_BACKOFF_BASE_MS: integer(2000, 1),
     REFERENCE_BACKOFF_MAX_MS: integer(120_000, 1),
     AWS_ENDPOINT_URL: z.url().default('http://localhost:4566'),
-    AWS_REGION: z.string().regex(/^[a-z0-9-]{1,32}$/, 'must be an AWS region name').default('us-east-1'),
+    AWS_REGION: z
+      .string()
+      .regex(/^[a-z0-9-]{1,32}$/, 'must be an AWS region name')
+      .default('us-east-1'),
     AWS_ACCESS_KEY_ID: z.string().min(1).default('test'),
     AWS_SECRET_ACCESS_KEY: z.string().min(1).default('test'),
     SQS_COMMANDS_QUEUE: fifoQueue('wager-transactions.fifo'),
@@ -98,7 +116,10 @@ const environmentSchema = z
     OUTBOX_RETRY_MAX_MS: integer(300_000, 1),
     OUTBOX_PUBLISHER_ENABLED: toggle(true),
     CONSUMER_ENABLED: toggle(true),
-    CONSUMER_NAME: z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/, 'must be 1 to 128 safe characters').default('wager-transactions-consumer'),
+    CONSUMER_NAME: z
+      .string()
+      .regex(/^[A-Za-z0-9._:-]{1,128}$/, 'must be 1 to 128 safe characters')
+      .default('wager-transactions-consumer'),
     CONSUMER_BATCH_SIZE: integer(10, 1, 10),
     SQS_RECEIVE_WAIT_SECONDS: integer(20, 0, 20),
     SQS_RECEIVE_TIMEOUT_MS: integer(25_000, 1),
@@ -109,33 +130,52 @@ const environmentSchema = z
     CONSUMER_RETRY_MAX_MS: integer(120_000, 1),
     CONSUMER_MAX_CONCURRENT_GROUPS: integer(5, 1),
   })
-  .refine((env) => env.REFERENCE_BACKOFF_MAX_MS >= env.REFERENCE_BACKOFF_BASE_MS, {
-    path: ['REFERENCE_BACKOFF_MAX_MS'],
-    message: 'must not be lower than REFERENCE_BACKOFF_BASE_MS',
-  })
+  .refine(
+    (env) => env.REFERENCE_BACKOFF_MAX_MS >= env.REFERENCE_BACKOFF_BASE_MS,
+    {
+      path: ['REFERENCE_BACKOFF_MAX_MS'],
+      message: 'must not be lower than REFERENCE_BACKOFF_BASE_MS',
+    },
+  )
   .refine((env) => env.OUTBOX_RETRY_MAX_MS >= env.OUTBOX_RETRY_BASE_MS, {
     path: ['OUTBOX_RETRY_MAX_MS'],
     message: 'must not be lower than OUTBOX_RETRY_BASE_MS',
   })
-  .refine((env) => env.SQS_RECEIVE_TIMEOUT_MS > env.SQS_RECEIVE_WAIT_SECONDS * 1000, {
-    path: ['SQS_RECEIVE_TIMEOUT_MS'],
-    message: 'must be longer than the long poll (SQS_RECEIVE_WAIT_SECONDS)',
-  })
-  .refine((env) => env.SQS_HEARTBEAT_INTERVAL_MS < env.SQS_VISIBILITY_TIMEOUT_SECONDS * 1000, {
-    path: ['SQS_HEARTBEAT_INTERVAL_MS'],
-    message: 'must be shorter than the visibility timeout (SQS_VISIBILITY_TIMEOUT_SECONDS)',
-  })
+  .refine(
+    (env) => env.SQS_RECEIVE_TIMEOUT_MS > env.SQS_RECEIVE_WAIT_SECONDS * 1000,
+    {
+      path: ['SQS_RECEIVE_TIMEOUT_MS'],
+      message: 'must be longer than the long poll (SQS_RECEIVE_WAIT_SECONDS)',
+    },
+  )
+  .refine(
+    (env) =>
+      env.SQS_HEARTBEAT_INTERVAL_MS < env.SQS_VISIBILITY_TIMEOUT_SECONDS * 1000,
+    {
+      path: ['SQS_HEARTBEAT_INTERVAL_MS'],
+      message:
+        'must be shorter than the visibility timeout (SQS_VISIBILITY_TIMEOUT_SECONDS)',
+    },
+  )
   .refine((env) => env.CONSUMER_RETRY_MAX_MS >= env.CONSUMER_RETRY_BASE_MS, {
     path: ['CONSUMER_RETRY_MAX_MS'],
     message: 'must not be lower than CONSUMER_RETRY_BASE_MS',
   });
 
-export function loadConfig(env: Readonly<Record<string, string | undefined>>): AppConfig {
-  const present = Object.fromEntries(Object.entries(env).filter(([, value]) => value !== undefined && value !== ''));
+export function loadConfig(
+  env: Readonly<Record<string, string | undefined>>,
+): AppConfig {
+  const present = Object.fromEntries(
+    Object.entries(env).filter(
+      ([, value]) => value !== undefined && value !== '',
+    ),
+  );
   const parsed = environmentSchema.safeParse(present);
   if (!parsed.success) {
     throw new InvalidConfigurationError(
-      parsed.error.issues.map((issue) => `${issue.path.join('.')} ${issue.message}`),
+      parsed.error.issues.map(
+        (issue) => `${issue.path.join('.')} ${issue.message}`,
+      ),
     );
   }
   const values = parsed.data;

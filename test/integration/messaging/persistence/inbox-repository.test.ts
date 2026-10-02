@@ -1,8 +1,22 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { InboxMessage, type ReceiveInboxProps } from '@messaging/domain/inbox-message';
+import {
+  InboxMessage,
+  type ReceiveInboxProps,
+} from '@messaging/domain/inbox-message';
 import { gate } from '@test/support/async';
-import { AT, HASH, LATER, openedWallet, settledBet, storeOpenedWallet } from '@test/support/domain-builders';
-import { type PersistenceHarness, createPersistenceHarness, plain } from '@test/support/persistence';
+import {
+  AT,
+  HASH,
+  LATER,
+  openedWallet,
+  settledBet,
+  storeOpenedWallet,
+} from '@test/support/domain-builders';
+import {
+  type PersistenceHarness,
+  createPersistenceHarness,
+  plain,
+} from '@test/support/persistence';
 
 let harness: PersistenceHarness;
 
@@ -24,7 +38,8 @@ function received(overrides: Partial<ReceiveInboxProps> = {}): InboxMessage {
   });
 }
 
-const record = (message: InboxMessage) => harness.unitOfWork.run(({ inbox }) => inbox.record(message));
+const record = (message: InboxMessage) =>
+  harness.unitOfWork.run(({ inbox }) => inbox.record(message));
 
 describe('MikroOrmInboxRepository', () => {
   test('records a message the first time it arrives', async () => {
@@ -35,17 +50,29 @@ describe('MikroOrmInboxRepository', () => {
     const first = received();
     await record(first);
 
-    const result = await record(received({ messageId: first.messageId, payloadHash: 'b'.repeat(64), receivedAt: LATER }));
+    const result = await record(
+      received({
+        messageId: first.messageId,
+        payloadHash: 'b'.repeat(64),
+        receivedAt: LATER,
+      }),
+    );
 
     expect(result.recorded).toBe(false);
-    expect(result.recorded ? undefined : plain(result.existing.toState())).toEqual(plain(first.toState()));
+    expect(
+      result.recorded ? undefined : plain(result.existing.toState()),
+    ).toEqual(plain(first.toState()));
   });
 
   test('keeps the deliveries of each consumer apart', async () => {
     const first = received();
     await record(first);
 
-    expect(await record(received({ messageId: first.messageId, consumerName: 'audit' }))).toEqual({ recorded: true });
+    expect(
+      await record(
+        received({ messageId: first.messageId, consumerName: 'audit' }),
+      ),
+    ).toEqual({ recorded: true });
   });
 
   test('makes a concurrent delivery wait for the first transaction and then see its record', async () => {
@@ -61,10 +88,12 @@ describe('MikroOrmInboxRepository', () => {
       order.push('first committing');
     });
     await recorded.opened;
-    const second = record(received({ messageId: first.messageId })).then((result) => {
-      order.push('second recorded');
-      return result;
-    });
+    const second = record(received({ messageId: first.messageId })).then(
+      (result) => {
+        order.push('second recorded');
+        return result;
+      },
+    );
     await Bun.sleep(100);
     release.open();
     await holder;

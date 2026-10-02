@@ -1,21 +1,51 @@
 import { describe, expect, test } from 'bun:test';
-import { InboxMessage, InvalidInboxMessageError, InvalidInboxStateError } from '@messaging/domain/inbox-message';
-import { InvalidOutboxStateError, OutboxMessage } from '@messaging/domain/outbox-message';
+import {
+  InboxMessage,
+  InvalidInboxMessageError,
+  InvalidInboxStateError,
+} from '@messaging/domain/inbox-message';
+import {
+  InvalidOutboxStateError,
+  OutboxMessage,
+} from '@messaging/domain/outbox-message';
 import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
-import { AT, HASH, LATER, brl, walletWith } from '@test/support/wallet-fixtures';
+import {
+  AT,
+  HASH,
+  LATER,
+  brl,
+  walletWith,
+} from '@test/support/wallet-fixtures';
 import { WalletBalanceChanged } from '@wallet/domain/events/wallet-balance-changed';
 
-const backoff = ExponentialBackoff.create({ baseMs: 1_000, maxMs: 300_000, random: () => 1 });
+const backoff = ExponentialBackoff.create({
+  baseMs: 1_000,
+  maxMs: 300_000,
+  random: () => 1,
+});
 
 function balanceChangedEvent(): WalletBalanceChanged {
   const wallet = walletWith('100.00');
-  const entry = wallet.debit(brl('80.00'), { transactionId: 'tx-1', entryId: 'entry-1', at: AT });
-  return WalletBalanceChanged.from(wallet, entry, { eventId: 'event-1', correlationId: 'correlation-1', occurredAt: AT });
+  const entry = wallet.debit(brl('80.00'), {
+    transactionId: 'tx-1',
+    entryId: 'entry-1',
+    at: AT,
+  });
+  return WalletBalanceChanged.from(wallet, entry, {
+    eventId: 'event-1',
+    correlationId: 'correlation-1',
+    occurredAt: AT,
+  });
 }
 
 describe('InboxMessage', () => {
   const received = () =>
-    InboxMessage.receive({ messageId: 'msg-1', consumerName: 'wager-transactions', payloadHash: HASH, receivedAt: AT });
+    InboxMessage.receive({
+      messageId: 'msg-1',
+      consumerName: 'wager-transactions',
+      payloadHash: HASH,
+      receivedAt: AT,
+    });
 
   test('starts unprocessed and records when it was processed', () => {
     const message = received();
@@ -45,9 +75,9 @@ describe('InboxMessage', () => {
     { messageId: '', consumerName: 'wager-transactions' },
     { messageId: 'msg-1', consumerName: '' },
   ])('refuses an empty identity %p', (identity) => {
-    expect(() => InboxMessage.receive({ ...identity, payloadHash: HASH, receivedAt: AT })).toThrow(
-      InvalidInboxMessageError,
-    );
+    expect(() =>
+      InboxMessage.receive({ ...identity, payloadHash: HASH, receivedAt: AT }),
+    ).toThrow(InvalidInboxMessageError);
   });
 
   test('rehydrates a processed message', () => {
@@ -122,7 +152,9 @@ describe('OutboxMessage', () => {
     message.markPublished(LATER);
 
     expect(() => message.markPublished(LATER)).toThrow(InvalidOutboxStateError);
-    expect(() => message.scheduleRetry(LATER, backoff, 'late')).toThrow(InvalidOutboxStateError);
+    expect(() => message.scheduleRetry(LATER, backoff, 'late')).toThrow(
+      InvalidOutboxStateError,
+    );
   });
 
   test('rehydrates stored state', () => {

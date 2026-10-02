@@ -2,7 +2,12 @@ import { Module } from '@nestjs/common';
 import { MikroORM } from '@mikro-orm/postgresql';
 import type { AppConfig } from '@platform/config/app-config';
 import { MikroOrmUnitOfWork } from '@platform/database/mikro-orm-unit-of-work';
-import { APP_CONFIG, CLOCK, ID_GENERATOR, PAYLOAD_FINGERPRINTER } from '@platform/tokens';
+import {
+  APP_CONFIG,
+  CLOCK,
+  ID_GENERATOR,
+  PAYLOAD_FINGERPRINTER,
+} from '@platform/tokens';
 import type { Clock } from '@shared/application/clock';
 import type { IdGenerator } from '@shared/application/id-generator';
 import type { PayloadFingerprinter } from '@shared/application/payload-fingerprinter';
@@ -19,14 +24,22 @@ import { createWageringScope } from './persistence/wagering-scope';
 
 export const WAGERING_UNIT_OF_WORK = Symbol('WAGERING_UNIT_OF_WORK');
 
-const useCases = [OpenWallet, SubmitWagerTransaction, ProcessPendingReference, WalletQueries, ReconcileWallet];
+const useCases = [
+  OpenWallet,
+  SubmitWagerTransaction,
+  ProcessPendingReference,
+  WalletQueries,
+  ReconcileWallet,
+];
 
 @Module({
   providers: [
     {
       provide: WAGERING_UNIT_OF_WORK,
       useFactory: (orm: MikroORM, config: AppConfig) =>
-        new MikroOrmUnitOfWork(orm, createWageringScope, { lockTimeoutMs: config.database.lockTimeoutMs }),
+        new MikroOrmUnitOfWork(orm, createWageringScope, {
+          lockTimeoutMs: config.database.lockTimeoutMs,
+        }),
       inject: [MikroORM, APP_CONFIG],
     },
     {
@@ -43,9 +56,18 @@ const useCases = [OpenWallet, SubmitWagerTransaction, ProcessPendingReference, W
     },
     {
       provide: OpenWallet,
-      useFactory: (unitOfWork: UnitOfWork<WageringScope>, fingerprinter: PayloadFingerprinter, clock: Clock, ids: IdGenerator) =>
-        new OpenWallet({ unitOfWork, fingerprinter, clock, ids }),
-      inject: [WAGERING_UNIT_OF_WORK, PAYLOAD_FINGERPRINTER, CLOCK, ID_GENERATOR],
+      useFactory: (
+        unitOfWork: UnitOfWork<WageringScope>,
+        fingerprinter: PayloadFingerprinter,
+        clock: Clock,
+        ids: IdGenerator,
+      ) => new OpenWallet({ unitOfWork, fingerprinter, clock, ids }),
+      inject: [
+        WAGERING_UNIT_OF_WORK,
+        PAYLOAD_FINGERPRINTER,
+        CLOCK,
+        ID_GENERATOR,
+      ],
     },
     {
       provide: SubmitWagerTransaction,
@@ -55,23 +77,42 @@ const useCases = [OpenWallet, SubmitWagerTransaction, ProcessPendingReference, W
         clock: Clock,
         ids: IdGenerator,
         settlement: SettlementPolicy,
-      ) => new SubmitWagerTransaction({ unitOfWork, fingerprinter, clock, ids, settlement }),
-      inject: [WAGERING_UNIT_OF_WORK, PAYLOAD_FINGERPRINTER, CLOCK, ID_GENERATOR, SettlementPolicy],
+      ) =>
+        new SubmitWagerTransaction({
+          unitOfWork,
+          fingerprinter,
+          clock,
+          ids,
+          settlement,
+        }),
+      inject: [
+        WAGERING_UNIT_OF_WORK,
+        PAYLOAD_FINGERPRINTER,
+        CLOCK,
+        ID_GENERATOR,
+        SettlementPolicy,
+      ],
     },
     {
       provide: ProcessPendingReference,
-      useFactory: (unitOfWork: UnitOfWork<WageringScope>, clock: Clock, ids: IdGenerator, settlement: SettlementPolicy) =>
-        new ProcessPendingReference({ unitOfWork, clock, ids, settlement }),
+      useFactory: (
+        unitOfWork: UnitOfWork<WageringScope>,
+        clock: Clock,
+        ids: IdGenerator,
+        settlement: SettlementPolicy,
+      ) => new ProcessPendingReference({ unitOfWork, clock, ids, settlement }),
       inject: [WAGERING_UNIT_OF_WORK, CLOCK, ID_GENERATOR, SettlementPolicy],
     },
     {
       provide: WalletQueries,
-      useFactory: (unitOfWork: UnitOfWork<WageringScope>) => new WalletQueries({ unitOfWork }),
+      useFactory: (unitOfWork: UnitOfWork<WageringScope>) =>
+        new WalletQueries({ unitOfWork }),
       inject: [WAGERING_UNIT_OF_WORK],
     },
     {
       provide: ReconcileWallet,
-      useFactory: (unitOfWork: UnitOfWork<WageringScope>) => new ReconcileWallet({ unitOfWork }),
+      useFactory: (unitOfWork: UnitOfWork<WageringScope>) =>
+        new ReconcileWallet({ unitOfWork }),
       inject: [WAGERING_UNIT_OF_WORK],
     },
   ],

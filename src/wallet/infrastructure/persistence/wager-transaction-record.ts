@@ -53,7 +53,9 @@ export type WagerTransactionProgress = Pick<
   | 'updatedAt'
 >;
 
-export function toWagerTransactionProgress(transaction: WagerTransaction): WagerTransactionProgress {
+export function toWagerTransactionProgress(
+  transaction: WagerTransaction,
+): WagerTransactionProgress {
   const resultBalance = transaction.resultBalance?.toJSON();
   return {
     status: transaction.status,
@@ -68,7 +70,9 @@ export function toWagerTransactionProgress(transaction: WagerTransaction): Wager
   };
 }
 
-export function toWagerTransactionRow(transaction: WagerTransaction): WagerTransactionRow {
+export function toWagerTransactionRow(
+  transaction: WagerTransaction,
+): WagerTransactionRow {
   const money = transaction.money.toJSON();
   return {
     id: transaction.id,
@@ -83,7 +87,8 @@ export function toWagerTransactionRow(transaction: WagerTransaction): WagerTrans
     kind: transaction.kind,
     amount: money.amount,
     currency: money.currency,
-    referenceExternalTransactionId: transaction.referenceExternalTransactionId ?? null,
+    referenceExternalTransactionId:
+      transaction.referenceExternalTransactionId ?? null,
     correlationId: transaction.correlationId,
     createdAt: transaction.createdAt,
     ...toWagerTransactionProgress(transaction),
@@ -103,7 +108,8 @@ export function toWagerTransaction(row: WagerTransactionRow): WagerTransaction {
     gameId: row.gameId,
     kind: row.kind as WagerTransactionKind,
     money: Money.from({ amount: row.amount, currency: row.currency }),
-    referenceExternalTransactionId: row.referenceExternalTransactionId ?? undefined,
+    referenceExternalTransactionId:
+      row.referenceExternalTransactionId ?? undefined,
     correlationId: row.correlationId,
     createdAt: row.createdAt,
     status: row.status as WagerTransactionStatus,
@@ -113,7 +119,10 @@ export function toWagerTransaction(row: WagerTransactionRow): WagerTransaction {
     resultBalance:
       row.resultBalanceAmount == null || row.resultBalanceCurrency == null
         ? undefined
-        : Money.from({ amount: row.resultBalanceAmount, currency: row.resultBalanceCurrency }),
+        : Money.from({
+            amount: row.resultBalanceAmount,
+            currency: row.resultBalanceCurrency,
+          }),
     referenceAttempts: row.referenceAttempts,
     nextReferenceAttemptAt: row.nextReferenceAttemptAt ?? undefined,
     updatedAt: row.updatedAt,

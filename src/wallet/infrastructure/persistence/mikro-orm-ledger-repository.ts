@@ -6,7 +6,11 @@ import type {
 } from '@wallet/application/ports/ledger-repository';
 import type { WalletLedgerEntry } from '@wallet/domain/ledger/wallet-ledger-entry';
 import { Money } from '@wallet/domain/money/money';
-import { LedgerEntryRecord, toLedgerEntry, toLedgerEntryRow } from './ledger-entry-record';
+import {
+  LedgerEntryRecord,
+  toLedgerEntry,
+  toLedgerEntryRow,
+} from './ledger-entry-record';
 
 interface ReconciliationRow {
   currency: string;
@@ -33,21 +37,36 @@ export class MikroOrmLedgerRepository implements LedgerRepository {
     await this.em.insert(LedgerEntryRecord, toLedgerEntryRow(entry));
   }
 
-  async page(walletId: string, request: LedgerPageRequest): Promise<WalletLedgerEntry[]> {
+  async page(
+    walletId: string,
+    request: LedgerPageRequest,
+  ): Promise<WalletLedgerEntry[]> {
     const rows = await this.em.find(
       LedgerEntryRecord,
-      request.beforeVersion === undefined ? { walletId } : { walletId, walletVersion: { $lt: request.beforeVersion } },
-      { orderBy: { walletVersion: 'desc' }, limit: request.limit, disableIdentityMap: true },
+      request.beforeVersion === undefined
+        ? { walletId }
+        : { walletId, walletVersion: { $lt: request.beforeVersion } },
+      {
+        orderBy: { walletVersion: 'desc' },
+        limit: request.limit,
+        disableIdentityMap: true,
+      },
     );
     return rows.map(toLedgerEntry);
   }
 
-  async reconciliationSnapshot(walletId: string): Promise<ReconciliationSnapshot | null> {
-    const [row] = await this.em.execute<ReconciliationRow[]>(RECONCILIATION_SQL, [walletId]);
+  async reconciliationSnapshot(
+    walletId: string,
+  ): Promise<ReconciliationSnapshot | null> {
+    const [row] = await this.em.execute<ReconciliationRow[]>(
+      RECONCILIATION_SQL,
+      [walletId],
+    );
     if (row === undefined) {
       return null;
     }
-    const money = (amount: string) => Money.from({ amount, currency: row.currency });
+    const money = (amount: string) =>
+      Money.from({ amount, currency: row.currency });
     return {
       storedBalance: money(row.stored),
       credits: money(row.credits),

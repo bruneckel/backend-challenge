@@ -1,4 +1,10 @@
-import { type CanActivate, type ExecutionContext, Inject, Injectable, SetMetadata } from '@nestjs/common';
+import {
+  type CanActivate,
+  type ExecutionContext,
+  Inject,
+  Injectable,
+  SetMetadata,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PROVIDER_IDENTITY } from '@platform/tokens';
 import type { ProviderIdentityPort } from './provider-identity';
@@ -15,7 +21,13 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [context.getHandler(), context.getClass()]);
-    return isPublic === true || this.identity.authenticate(context.switchToHttp().getRequest());
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    return (
+      isPublic === true ||
+      this.identity.authenticate(context.switchToHttp().getRequest())
+    );
   }
 }

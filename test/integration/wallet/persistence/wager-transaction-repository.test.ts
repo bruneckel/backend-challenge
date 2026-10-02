@@ -9,7 +9,11 @@ import {
   storeOpenedWallet,
 } from '@test/support/domain-builders';
 import { gate, rejectionOf } from '@test/support/async';
-import { type PersistenceHarness, createPersistenceHarness, plain } from '@test/support/persistence';
+import {
+  type PersistenceHarness,
+  createPersistenceHarness,
+  plain,
+} from '@test/support/persistence';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
 import {
   DuplicateWagerTransactionError,
@@ -35,28 +39,45 @@ afterAll(async () => {
   await harness.close();
 });
 
-const run = <T>(work: (scope: WageringScope) => Promise<T>) => harness.unitOfWork.run(work);
+const run = <T>(work: (scope: WageringScope) => Promise<T>) =>
+  harness.unitOfWork.run(work);
 
-async function stored(transaction: WagerTransaction): Promise<WagerTransaction> {
+async function stored(
+  transaction: WagerTransaction,
+): Promise<WagerTransaction> {
   await run(({ transactions }) => transactions.insert(transaction));
   return transaction;
 }
 
 function processedBet(amount = '10.00'): WagerTransaction {
-  const bet = pendingTransaction(opened.wallet, WagerTransactionKind.Bet, amount);
+  const bet = pendingTransaction(
+    opened.wallet,
+    WagerTransactionKind.Bet,
+    amount,
+  );
   bet.markProcessed(undefined, money('90.00'), LATER);
   return bet;
 }
 
-function waitingRefund(referenceExternalTransactionId = 'ext-missing', amount = '10.00'): WagerTransaction {
-  const refund = pendingTransaction(opened.wallet, WagerTransactionKind.Refund, amount, { referenceExternalTransactionId });
+function waitingRefund(
+  referenceExternalTransactionId = 'ext-missing',
+  amount = '10.00',
+): WagerTransaction {
+  const refund = pendingTransaction(
+    opened.wallet,
+    WagerTransactionKind.Refund,
+    amount,
+    { referenceExternalTransactionId },
+  );
   refund.markPendingReference(money('100.00'), LATER, AT);
   return refund;
 }
 
 describe('MikroOrmWagerTransactionRepository', () => {
   test('round-trips the OPENING of a wallet', async () => {
-    const found = await run(({ transactions }) => transactions.findById(opened.opening!.id));
+    const found = await run(({ transactions }) =>
+      transactions.findById(opened.opening!.id),
+    );
 
     expect(plain(found?.toState())).toEqual(plain(opened.opening!.toState()));
   });
@@ -66,7 +87,11 @@ describe('MikroOrmWagerTransactionRepository', () => {
     [
       'rejected BET',
       () => {
-        const bet = pendingTransaction(opened.wallet, WagerTransactionKind.Bet, '500.00');
+        const bet = pendingTransaction(
+          opened.wallet,
+          WagerTransactionKind.Bet,
+          '500.00',
+        );
         bet.reject(FailureCode.InsufficientFunds, money('100.00'), LATER);
         return bet;
       },
@@ -74,7 +99,11 @@ describe('MikroOrmWagerTransactionRepository', () => {
     [
       'failed BET',
       () => {
-        const bet = pendingTransaction(opened.wallet, WagerTransactionKind.Bet, '10.00');
+        const bet = pendingTransaction(
+          opened.wallet,
+          WagerTransactionKind.Bet,
+          '10.00',
+        );
         bet.fail(FailureCode.ProcessingFailed, LATER);
         return bet;
       },
@@ -82,7 +111,11 @@ describe('MikroOrmWagerTransactionRepository', () => {
     [
       'zero LOSS',
       () => {
-        const loss = pendingTransaction(opened.wallet, WagerTransactionKind.Loss, '0.00');
+        const loss = pendingTransaction(
+          opened.wallet,
+          WagerTransactionKind.Loss,
+          '0.00',
+        );
         loss.markProcessed(undefined, money('100.00'), LATER);
         return loss;
       },
@@ -98,20 +131,29 @@ describe('MikroOrmWagerTransactionRepository', () => {
   ] as const)('round-trips a %s', async (_, build) => {
     const transaction = await stored(build());
 
-    const found = await run(({ transactions }) => transactions.findById(transaction.id));
+    const found = await run(({ transactions }) =>
+      transactions.findById(transaction.id),
+    );
 
     expect(plain(found?.toState())).toEqual(plain(transaction.toState()));
   });
 
   test('round-trips a processed reversal that points to its reference', async () => {
     const bet = await stored(processedBet());
-    const refund = pendingTransaction(opened.wallet, WagerTransactionKind.Refund, '10.00', {
-      referenceExternalTransactionId: bet.externalTransactionId,
-    });
+    const refund = pendingTransaction(
+      opened.wallet,
+      WagerTransactionKind.Refund,
+      '10.00',
+      {
+        referenceExternalTransactionId: bet.externalTransactionId,
+      },
+    );
     refund.markProcessed(bet.id, money('100.00'), LATER);
     await stored(refund);
 
-    const found = await run(({ transactions }) => transactions.findById(refund.id));
+    const found = await run(({ transactions }) =>
+      transactions.findById(refund.id),
+    );
 
     expect(plain(found?.toState())).toEqual(plain(refund.toState()));
     expect(found?.referenceTransactionId).toBe(bet.id);
@@ -120,7 +162,9 @@ describe('MikroOrmWagerTransactionRepository', () => {
   test('finds a transaction by idempotency key and by provider and external id', async () => {
     const bet = await stored(processedBet());
 
-    const byKey = await run(({ transactions }) => transactions.findByIdempotencyKey(bet.idempotencyKey));
+    const byKey = await run(({ transactions }) =>
+      transactions.findByIdempotencyKey(bet.idempotencyKey),
+    );
     const byExternalId = await run(({ transactions }) =>
       transactions.findByExternalId(bet.providerId, bet.externalTransactionId),
     );
@@ -130,15 +174,36 @@ describe('MikroOrmWagerTransactionRepository', () => {
   });
 
   test('returns null for unknown ids and keys', async () => {
-    expect(await run(({ transactions }) => transactions.findById(Bun.randomUUIDv7()))).toBeNull();
-    expect(await run(({ transactions }) => transactions.findByIdempotencyKey('unknown-key'))).toBeNull();
-    expect(await run(({ transactions }) => transactions.findByExternalId('provider-a', 'unknown'))).toBeNull();
-    expect(await run(({ transactions }) => transactions.lockById(Bun.randomUUIDv7()))).toBeNull();
+    expect(
+      await run(({ transactions }) =>
+        transactions.findById(Bun.randomUUIDv7()),
+      ),
+    ).toBeNull();
+    expect(
+      await run(({ transactions }) =>
+        transactions.findByIdempotencyKey('unknown-key'),
+      ),
+    ).toBeNull();
+    expect(
+      await run(({ transactions }) =>
+        transactions.findByExternalId('provider-a', 'unknown'),
+      ),
+    ).toBeNull();
+    expect(
+      await run(({ transactions }) =>
+        transactions.lockById(Bun.randomUUIDv7()),
+      ),
+    ).toBeNull();
   });
 
   test('reports a reused idempotency key as a duplicate', async () => {
     const bet = await stored(processedBet());
-    const reused = pendingTransaction(opened.wallet, WagerTransactionKind.Bet, '10.00', { idempotencyKey: bet.idempotencyKey });
+    const reused = pendingTransaction(
+      opened.wallet,
+      WagerTransactionKind.Bet,
+      '10.00',
+      { idempotencyKey: bet.idempotencyKey },
+    );
     reused.markProcessed(undefined, money('90.00'), LATER);
 
     const insert = run(({ transactions }) => transactions.insert(reused));
@@ -150,9 +215,14 @@ describe('MikroOrmWagerTransactionRepository', () => {
 
   test('reports a reused external id of the same provider as a duplicate', async () => {
     const bet = await stored(processedBet());
-    const reused = pendingTransaction(opened.wallet, WagerTransactionKind.Bet, '10.00', {
-      externalTransactionId: bet.externalTransactionId,
-    });
+    const reused = pendingTransaction(
+      opened.wallet,
+      WagerTransactionKind.Bet,
+      '10.00',
+      {
+        externalTransactionId: bet.externalTransactionId,
+      },
+    );
     reused.markProcessed(undefined, money('90.00'), LATER);
 
     const insert = run(({ transactions }) => transactions.insert(reused));
@@ -172,7 +242,9 @@ describe('MikroOrmWagerTransactionRepository', () => {
       await transactions.updatePending(locked!);
     });
 
-    const found = await run(({ transactions }) => transactions.findById(refund.id));
+    const found = await run(({ transactions }) =>
+      transactions.findById(refund.id),
+    );
     expect(found?.status).toBe(WagerTransactionStatus.Processed);
     expect(found?.referenceTransactionId).toBe(bet.id);
     expect(found?.processedAt).toEqual(LATER);
@@ -189,7 +261,9 @@ describe('MikroOrmWagerTransactionRepository', () => {
       await transactions.updatePending(locked!);
     });
 
-    const found = await run(({ transactions }) => transactions.findById(refund.id));
+    const found = await run(({ transactions }) =>
+      transactions.findById(refund.id),
+    );
     expect(found?.status).toBe(WagerTransactionStatus.PendingReference);
     expect(found?.referenceAttempts).toBe(1);
     expect(found?.nextReferenceAttemptAt).toEqual(nextAttempt);
@@ -205,23 +279,38 @@ describe('MikroOrmWagerTransactionRepository', () => {
     });
     staleCopy.fail(FailureCode.ProcessingFailed, LATER);
 
-    const update = run(({ transactions }) => transactions.updatePending(staleCopy));
+    const update = run(({ transactions }) =>
+      transactions.updatePending(staleCopy),
+    );
 
-    expect(await rejectionOf(update)).toBeInstanceOf(StaleTransactionStateError);
-    const found = await run(({ transactions }) => transactions.findById(refund.id));
+    expect(await rejectionOf(update)).toBeInstanceOf(
+      StaleTransactionStateError,
+    );
+    const found = await run(({ transactions }) =>
+      transactions.findById(refund.id),
+    );
     expect(found?.status).toBe(WagerTransactionStatus.Rejected);
   });
 
   test('knows whether a reference already has a processed reversal of a kind', async () => {
     const bet = await stored(processedBet());
-    const refund = pendingTransaction(opened.wallet, WagerTransactionKind.Refund, '10.00', {
-      referenceExternalTransactionId: bet.externalTransactionId,
-    });
+    const refund = pendingTransaction(
+      opened.wallet,
+      WagerTransactionKind.Refund,
+      '10.00',
+      {
+        referenceExternalTransactionId: bet.externalTransactionId,
+      },
+    );
     refund.markProcessed(bet.id, money('100.00'), LATER);
 
-    const before = await run(({ transactions }) => transactions.hasProcessedReversal(bet.id, WagerTransactionKind.Refund));
+    const before = await run(({ transactions }) =>
+      transactions.hasProcessedReversal(bet.id, WagerTransactionKind.Refund),
+    );
     await stored(refund);
-    const afterRefund = await run(({ transactions }) => transactions.hasProcessedReversal(bet.id, WagerTransactionKind.Refund));
+    const afterRefund = await run(({ transactions }) =>
+      transactions.hasProcessedReversal(bet.id, WagerTransactionKind.Refund),
+    );
     const afterRollback = await run(({ transactions }) =>
       transactions.hasProcessedReversal(bet.id, WagerTransactionKind.Rollback),
     );
@@ -248,6 +337,10 @@ describe('MikroOrmWagerTransactionRepository', () => {
     });
     await Promise.all([first, second]);
 
-    expect(order).toEqual(['first locked', 'first committing', 'second locked']);
+    expect(order).toEqual([
+      'first locked',
+      'first committing',
+      'second locked',
+    ]);
   });
 });

@@ -1,4 +1,9 @@
-import { CreateQueueCommand, GetQueueAttributesCommand, GetQueueUrlCommand, type SQSClient } from '@aws-sdk/client-sqs';
+import {
+  CreateQueueCommand,
+  GetQueueAttributesCommand,
+  GetQueueUrlCommand,
+  type SQSClient,
+} from '@aws-sdk/client-sqs';
 
 export interface QueueNames {
   commands: string;
@@ -24,7 +29,10 @@ export async function ensureQueues(
     MessageRetentionPeriod: String(FOURTEEN_DAYS_SECONDS),
   });
   const { Attributes } = await client.send(
-    new GetQueueAttributesCommand({ QueueUrl: deadLetter, AttributeNames: ['QueueArn'] }),
+    new GetQueueAttributesCommand({
+      QueueUrl: deadLetter,
+      AttributeNames: ['QueueArn'],
+    }),
   );
   const commands = await createFifoQueue(client, names.commands, {
     VisibilityTimeout: String(options.visibilityTimeoutSeconds ?? 30),
@@ -37,15 +45,23 @@ export async function ensureQueues(
   return { commands, deadLetter, events };
 }
 
-export async function queueUrlOf(client: SQSClient, queueName: string): Promise<string> {
-  const { QueueUrl } = await client.send(new GetQueueUrlCommand({ QueueName: queueName }));
+export async function queueUrlOf(
+  client: SQSClient,
+  queueName: string,
+): Promise<string> {
+  const { QueueUrl } = await client.send(
+    new GetQueueUrlCommand({ QueueName: queueName }),
+  );
   if (QueueUrl === undefined) {
     throw new Error(`Queue ${queueName} has no URL`);
   }
   return QueueUrl;
 }
 
-export function lazyQueueUrl(client: SQSClient, queueName: string): () => Promise<string> {
+export function lazyQueueUrl(
+  client: SQSClient,
+  queueName: string,
+): () => Promise<string> {
   let resolved: Promise<string> | undefined;
   return () => {
     resolved ??= queueUrlOf(client, queueName).catch((error: unknown) => {
@@ -56,11 +72,19 @@ export function lazyQueueUrl(client: SQSClient, queueName: string): () => Promis
   };
 }
 
-async function createFifoQueue(client: SQSClient, name: string, attributes: Record<string, string>): Promise<string> {
+async function createFifoQueue(
+  client: SQSClient,
+  name: string,
+  attributes: Record<string, string>,
+): Promise<string> {
   const { QueueUrl } = await client.send(
     new CreateQueueCommand({
       QueueName: name,
-      Attributes: { FifoQueue: 'true', ContentBasedDeduplication: 'false', ...attributes },
+      Attributes: {
+        FifoQueue: 'true',
+        ContentBasedDeduplication: 'false',
+        ...attributes,
+      },
     }),
   );
   if (QueueUrl === undefined) {

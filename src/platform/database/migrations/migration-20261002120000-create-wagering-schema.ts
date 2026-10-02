@@ -19,7 +19,8 @@ const FAILURE_CODES = [
 const money = (column: string, sign: '>=' | '>') =>
   `scale(${column}) = 2 and ${column} ${sign} 0 and ${column} < ${MONEY_LIMIT}`;
 
-const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(', ');
+const list = (values: readonly string[]) =>
+  values.map((value) => `'${value}'`).join(', ');
 
 export class Migration20261002120000CreateWageringSchema extends Migration {
   override async up(): Promise<void> {

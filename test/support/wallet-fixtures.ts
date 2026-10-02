@@ -15,7 +15,10 @@ export const HASH = 'a'.repeat(64);
 export const brl = (amount: string) => Money.from({ amount, currency: 'BRL' });
 export const usd = (amount: string) => Money.from({ amount, currency: 'USD' });
 
-export function walletWith(balance: string, overrides: Partial<WalletState> = {}): Wallet {
+export function walletWith(
+  balance: string,
+  overrides: Partial<WalletState> = {},
+): Wallet {
   return Wallet.rehydrate({
     id: 'wallet-1',
     playerId: 'player-1',

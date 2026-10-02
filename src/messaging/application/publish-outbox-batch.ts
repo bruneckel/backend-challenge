@@ -26,34 +26,55 @@ export class PublishOutboxBatch {
 
   execute(): Promise<PublicationSummary> {
     return this.deps.unitOfWork.run(async ({ outbox }) => {
-      const batch = await outbox.claimDueBatch(this.deps.clock.now(), this.deps.batchSize);
+      const batch = await outbox.claimDueBatch(
+        this.deps.clock.now(),
+        this.deps.batchSize,
+      );
       if (batch.length === 0) {
         return { claimed: 0, published: 0, retried: 0 };
       }
       const report = await this.publish(batch);
       const at = this.deps.clock.now();
       const published = new Set(report.published);
-      const reasons = new Map(report.failed.map((failure) => [failure.messageId, failure.reason]));
+      const reasons = new Map(
+        report.failed.map((failure) => [failure.messageId, failure.reason]),
+      );
       let publishedCount = 0;
       for (const message of batch) {
         if (published.has(message.id)) {
           message.markPublished(at);
           publishedCount += 1;
         } else {
-          message.scheduleRetry(at, this.deps.retryBackoff, reasons.get(message.id) ?? UNCONFIRMED);
+          message.scheduleRetry(
+            at,
+            this.deps.retryBackoff,
+            reasons.get(message.id) ?? UNCONFIRMED,
+          );
         }
         await outbox.save(message);
       }
-      return { claimed: batch.length, published: publishedCount, retried: batch.length - publishedCount };
+      return {
+        claimed: batch.length,
+        published: publishedCount,
+        retried: batch.length - publishedCount,
+      };
     });
   }
 
-  private async publish(batch: readonly OutboxMessage[]): Promise<PublishReport> {
+  private async publish(
+    batch: readonly OutboxMessage[],
+  ): Promise<PublishReport> {
     try {
       return await this.deps.publisher.publish(batch);
     } catch (error) {
-      const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-      return { published: [], failed: batch.map((message) => ({ messageId: message.id, reason })) };
+      const reason =
+        error instanceof Error
+          ? `${error.name}: ${error.message}`
+          : String(error);
+      return {
+        published: [],
+        failed: batch.map((message) => ({ messageId: message.id, reason })),
+      };
     }
   }
 }

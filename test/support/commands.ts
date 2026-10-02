@@ -8,8 +8,10 @@ export function commandFor(
   amount: string,
   overrides: Partial<SubmitWagerTransactionCommand> = {},
 ): SubmitWagerTransactionCommand {
-  const externalTransactionId = overrides.externalTransactionId ?? `ext-${Bun.randomUUIDv7()}`;
-  const idempotencyKey = overrides.idempotencyKey ?? `provider-a:${externalTransactionId}`;
+  const externalTransactionId =
+    overrides.externalTransactionId ?? `ext-${Bun.randomUUIDv7()}`;
+  const idempotencyKey =
+    overrides.idempotencyKey ?? `provider-a:${externalTransactionId}`;
   return {
     providerId: 'provider-a',
     externalTransactionId,

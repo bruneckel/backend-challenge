@@ -1,5 +1,8 @@
 import type { MoneyProps } from '@wallet/domain/money/money';
-import type { WagerTransaction, WagerTransactionKind } from '@wallet/domain/transaction/wager-transaction';
+import type {
+  WagerTransaction,
+  WagerTransactionKind,
+} from '@wallet/domain/transaction/wager-transaction';
 
 export interface TransactionEventData {
   transactionId: string;
@@ -13,7 +16,9 @@ export interface TransactionEventData {
   money: MoneyProps;
 }
 
-export function transactionEventData(transaction: WagerTransaction): TransactionEventData {
+export function transactionEventData(
+  transaction: WagerTransaction,
+): TransactionEventData {
   return {
     transactionId: transaction.id,
     providerId: transaction.providerId,

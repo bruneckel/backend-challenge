@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { UuidV7Generator } from '@platform/ids/uuid-v7-generator';
 import { SystemClock } from '@platform/time/system-clock';
 
-const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_V7 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 describe('UuidV7Generator', () => {
   test('generates distinct version 7 UUIDs in creation order', () => {

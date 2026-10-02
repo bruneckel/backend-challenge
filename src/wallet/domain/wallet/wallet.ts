@@ -51,12 +51,25 @@ export class Wallet {
     private _updatedAt: Date,
   ) {}
 
-  static open(props: OpenWalletProps): { wallet: Wallet; openingEntry: WalletLedgerEntry | null } {
+  static open(props: OpenWalletProps): {
+    wallet: Wallet;
+    openingEntry: WalletLedgerEntry | null;
+  } {
     const { initialBalance } = props;
     if (initialBalance.isNegative()) {
-      throw new NegativeInitialBalanceError('Initial balance cannot be negative');
+      throw new NegativeInitialBalanceError(
+        'Initial balance cannot be negative',
+      );
     }
-    const wallet = new Wallet(props.id, props.playerId, initialBalance.currency, initialBalance, 1, props.at, props.at);
+    const wallet = new Wallet(
+      props.id,
+      props.playerId,
+      initialBalance.currency,
+      initialBalance,
+      1,
+      props.at,
+      props.at,
+    );
     if (initialBalance.isZero()) {
       return { wallet, openingEntry: null };
     }
@@ -108,12 +121,22 @@ export class Wallet {
     if (!this.canDebit(money)) {
       throw new InsufficientFundsError('Balance is not enough for this debit');
     }
-    return this.apply(LedgerDirection.Debit, money, this._balance.subtract(money), context);
+    return this.apply(
+      LedgerDirection.Debit,
+      money,
+      this._balance.subtract(money),
+      context,
+    );
   }
 
   credit(money: Money, context: MovementContext): WalletLedgerEntry {
     this.assertMovement(money);
-    return this.apply(LedgerDirection.Credit, money, this._balance.add(money), context);
+    return this.apply(
+      LedgerDirection.Credit,
+      money,
+      this._balance.add(money),
+      context,
+    );
   }
 
   toState(): WalletState {

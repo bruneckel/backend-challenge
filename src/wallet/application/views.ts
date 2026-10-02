@@ -77,7 +77,9 @@ export function toLedgerEntryView(entry: WalletLedgerEntry): LedgerEntryView {
   };
 }
 
-export function toTransactionView(transaction: WagerTransaction): TransactionView {
+export function toTransactionView(
+  transaction: WagerTransaction,
+): TransactionView {
   return {
     transactionId: transaction.id,
     providerId: transaction.providerId,
@@ -88,7 +90,10 @@ export function toTransactionView(transaction: WagerTransaction): TransactionVie
     gameId: transaction.gameId,
     kind: transaction.kind,
     money: transaction.money.toJSON(),
-    ...optional('referenceExternalTransactionId', transaction.referenceExternalTransactionId),
+    ...optional(
+      'referenceExternalTransactionId',
+      transaction.referenceExternalTransactionId,
+    ),
     ...optional('referenceTransactionId', transaction.referenceTransactionId),
     status: transaction.status,
     ...optional('failureCode', transaction.failureCode),
@@ -98,6 +103,9 @@ export function toTransactionView(transaction: WagerTransaction): TransactionVie
   };
 }
 
-function optional<K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> {
+function optional<K extends string, V>(
+  key: K,
+  value: V | undefined,
+): Partial<Record<K, V>> {
   return value === undefined ? {} : ({ [key]: value } as Record<K, V>);
 }

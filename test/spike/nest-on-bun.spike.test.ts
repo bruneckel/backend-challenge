@@ -19,7 +19,9 @@ class GreetingService {
   }
 }
 
-const echoSchema = z.object({ amount: z.string().regex(/^\d+\.\d{2}$/) }).strict();
+const echoSchema = z
+  .object({ amount: z.string().regex(/^\d+\.\d{2}$/) })
+  .strict();
 type EchoBody = z.infer<typeof echoSchema>;
 
 @Controller('spike')
@@ -45,7 +47,9 @@ describe('NestJS 12 on Bun', () => {
   let baseUrl: string;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [SpikeModule] }).compile();
+    const moduleRef = await Test.createTestingModule({
+      imports: [SpikeModule],
+    }).compile();
     app = moduleRef.createNestApplication({ logger: false });
     app.useGlobalPipes(new StandardSchemaValidationPipe());
     await app.listen(0, '127.0.0.1');

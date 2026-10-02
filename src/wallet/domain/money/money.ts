@@ -27,7 +27,9 @@ export class CurrencyMismatchError extends DomainError {
 
 function assertCurrency(currency: unknown): asserts currency is string {
   if (typeof currency !== 'string' || !CURRENCY_PATTERN.test(currency)) {
-    throw new InvalidMoneyError('Currency must be a three-letter uppercase ISO-4217 code');
+    throw new InvalidMoneyError(
+      'Currency must be a three-letter uppercase ISO-4217 code',
+    );
   }
 }
 
@@ -45,7 +47,9 @@ export class Money {
   static from(props: MoneyProps): Money {
     const { amount, currency } = props;
     if (typeof amount !== 'string' || !AMOUNT_PATTERN.test(amount)) {
-      throw new InvalidMoneyError('Amount must be a non-negative decimal string with exactly two decimal places');
+      throw new InvalidMoneyError(
+        'Amount must be a non-negative decimal string with exactly two decimal places',
+      );
     }
     assertCurrency(currency);
     return new Money(new Decimal(amount), currency);
@@ -100,7 +104,9 @@ export class Money {
   }
 
   valueOf(): never {
-    throw new TypeError('Money cannot be converted to a JavaScript number; use toString() or toJSON()');
+    throw new TypeError(
+      'Money cannot be converted to a JavaScript number; use toString() or toJSON()',
+    );
   }
 
   private assertSameCurrency(other: Money): void {

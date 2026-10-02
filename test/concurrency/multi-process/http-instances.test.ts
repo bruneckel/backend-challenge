@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { type ApiResponse, requestApi } from '@test/support/api';
-import { type TestDatabase, createMigratedDatabase } from '@test/support/database';
+import {
+  type TestDatabase,
+  createMigratedDatabase,
+} from '@test/support/database';
 import { walletInvariantViolations } from '@test/support/invariants';
 import { type RunningProcess, startApiProcess } from '@test/support/processes';
 
@@ -11,13 +14,22 @@ beforeAll(async () => {
   database = await createMigratedDatabase();
   instances = await Promise.all(
     [1, 2, 3].map((number) =>
-      startApiProcess({ DATABASE_URL: database.url, INSTANCE_ID: `api-${number}`, DB_POOL_SIZE: '5' }),
+      startApiProcess({
+        DATABASE_URL: database.url,
+        INSTANCE_ID: `api-${number}`,
+        DB_POOL_SIZE: '5',
+      }),
     ),
   );
 }, 60_000);
 
 afterAll(async () => {
-  const stopped = await Promise.all((instances ?? []).map(async (instance) => ({ instance, code: await instance.stop() })));
+  const stopped = await Promise.all(
+    (instances ?? []).map(async (instance) => ({
+      instance,
+      code: await instance.stop(),
+    })),
+  );
   for (const { instance } of stopped) {
     expect(instance.output()).toContain('"msg":"shutdown complete"');
   }
@@ -36,7 +48,10 @@ interface Submission {
   body: Record<string, unknown>;
 }
 
-async function openWallet(instance: RunningProcess, amount: string): Promise<Wallet> {
+async function openWallet(
+  instance: RunningProcess,
+  amount: string,
+): Promise<Wallet> {
   const response = await requestApi(instance.url, 'POST', '/wallets', {
     body: { playerId: Bun.randomUUIDv7(), initialBalance: brl(amount) },
   });
@@ -62,7 +77,10 @@ function bet(wallet: Wallet, amount: string): Submission {
 }
 
 const submitTo = (instance: RunningProcess, { key, body }: Submission) =>
-  requestApi(instance.url, 'POST', '/wagering/transactions', { headers: { 'idempotency-key': key }, body });
+  requestApi(instance.url, 'POST', '/wagering/transactions', {
+    headers: { 'idempotency-key': key },
+    body,
+  });
 
 const instance = (index: number) => instances[index % instances.length]!;
 
@@ -77,17 +95,27 @@ describe('C1 via HTTP on three API processes', () => {
     const wallet = await openWallet(instance(0), '100.00');
     const request = bet(wallet, '10.00');
 
-    const responses = await Promise.all(Array.from({ length: 50 }, (_, index) => submitTo(instance(index), request)));
+    const responses = await Promise.all(
+      Array.from({ length: 50 }, (_, index) =>
+        submitTo(instance(index), request),
+      ),
+    );
 
     expect(responses.every((response) => response.status === 200)).toBe(true);
-    const applied = responses.filter((response) => response.body.idempotentReplay === false);
+    const applied = responses.filter(
+      (response) => response.body.idempotentReplay === false,
+    );
     expect(applied).toHaveLength(1);
     for (const response of responses) {
-      expect({ ...response.body, idempotentReplay: false }).toEqual(applied[0]!.body);
+      expect({ ...response.body, idempotentReplay: false }).toEqual(
+        applied[0]!.body,
+      );
     }
     expect(applied[0]!.body.balance).toEqual(brl('90.00'));
     expect(await debitsOf(wallet.id)).toBe(1);
-    expect(await walletInvariantViolations(database.sql, wallet.id)).toEqual([]);
+    expect(await walletInvariantViolations(database.sql, wallet.id)).toEqual(
+      [],
+    );
   });
 });
 
@@ -106,19 +134,33 @@ describe('C2 via HTTP on three API processes', () => {
         submitTo(instance(round + 3), second),
       ]);
 
-      const outcomes = [responses.slice(0, 1).concat(responses[2]!), [responses[1]!, responses[3]!]].map(
-        (copies: ApiResponse[]) => {
-          expect(copies[0]!.status).toBe(copies[1]!.status);
-          expect({ ...copies[0]!.body, idempotentReplay: false }).toEqual({ ...copies[1]!.body, idempotentReplay: false });
-          return copies[0]!;
-        },
+      const outcomes = [
+        responses.slice(0, 1).concat(responses[2]!),
+        [responses[1]!, responses[3]!],
+      ].map((copies: ApiResponse[]) => {
+        expect(copies[0]!.status).toBe(copies[1]!.status);
+        expect({ ...copies[0]!.body, idempotentReplay: false }).toEqual({
+          ...copies[1]!.body,
+          idempotentReplay: false,
+        });
+        return copies[0]!;
+      });
+      expect(outcomes.map((outcome) => outcome.status).sort()).toEqual([
+        200, 422,
+      ]);
+      expect(
+        outcomes.find((outcome) => outcome.status === 422)!.body.failureCode,
+      ).toBe('INSUFFICIENT_FUNDS');
+      const current = await requestApi(
+        instance(round + 4).url,
+        'GET',
+        `/wallets/${wallet.id}`,
       );
-      expect(outcomes.map((outcome) => outcome.status).sort()).toEqual([200, 422]);
-      expect(outcomes.find((outcome) => outcome.status === 422)!.body.failureCode).toBe('INSUFFICIENT_FUNDS');
-      const current = await requestApi(instance(round + 4).url, 'GET', `/wallets/${wallet.id}`);
       expect(current.body.balance).toEqual(brl('20.00'));
       expect(await debitsOf(wallet.id)).toBe(1);
-      expect(await walletInvariantViolations(database.sql, wallet.id)).toEqual([]);
+      expect(await walletInvariantViolations(database.sql, wallet.id)).toEqual(
+        [],
+      );
     },
   );
 });

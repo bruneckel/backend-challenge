@@ -1,16 +1,24 @@
 import { describe, expect, test } from 'bun:test';
-import { CurrencyMismatchError, InvalidMoneyError, Money } from '@wallet/domain/money/money';
+import {
+  CurrencyMismatchError,
+  InvalidMoneyError,
+  Money,
+} from '@wallet/domain/money/money';
 
 const brl = (amount: string) => Money.from({ amount, currency: 'BRL' });
 const usd = (amount: string) => Money.from({ amount, currency: 'USD' });
 
 describe('Money.from', () => {
-  test.each(['0.00', '0.01', '25.00', '1000.00', '99999999999999999.99', '123456789012345678901.10'])(
-    'accepts %p',
-    (amount) => {
-      expect(brl(amount).toJSON()).toEqual({ amount, currency: 'BRL' });
-    },
-  );
+  test.each([
+    '0.00',
+    '0.01',
+    '25.00',
+    '1000.00',
+    '99999999999999999.99',
+    '123456789012345678901.10',
+  ])('accepts %p', (amount) => {
+    expect(brl(amount).toJSON()).toEqual({ amount, currency: 'BRL' });
+  });
 
   test.each([
     '',
@@ -39,15 +47,25 @@ describe('Money.from', () => {
   });
 
   test('rejects a JavaScript number even when it looks like money', () => {
-    expect(() => Money.from({ amount: 25 as unknown as string, currency: 'BRL' })).toThrow(InvalidMoneyError);
+    expect(() =>
+      Money.from({ amount: 25 as unknown as string, currency: 'BRL' }),
+    ).toThrow(InvalidMoneyError);
   });
 
-  test.each(['brl', 'BR', 'BRLL', '', 'B1L', ' BRL'])('rejects the currency %p', (currency) => {
-    expect(() => Money.from({ amount: '1.00', currency })).toThrow(InvalidMoneyError);
-  });
+  test.each(['brl', 'BR', 'BRLL', '', 'B1L', ' BRL'])(
+    'rejects the currency %p',
+    (currency) => {
+      expect(() => Money.from({ amount: '1.00', currency })).toThrow(
+        InvalidMoneyError,
+      );
+    },
+  );
 
   test('creates zero in the given currency', () => {
-    expect(Money.zero('USD').toJSON()).toEqual({ amount: '0.00', currency: 'USD' });
+    expect(Money.zero('USD').toJSON()).toEqual({
+      amount: '0.00',
+      currency: 'USD',
+    });
   });
 
   test('rejects an invalid currency for zero', () => {
@@ -61,7 +79,9 @@ describe('Money arithmetic', () => {
   });
 
   test('stays exact at the storage limit', () => {
-    expect(brl('99999999999999999.98').add(brl('0.01')).toString()).toBe('99999999999999999.99');
+    expect(brl('99999999999999999.98').add(brl('0.01')).toString()).toBe(
+      '99999999999999999.99',
+    );
   });
 
   test('subtracts', () => {
@@ -89,8 +109,12 @@ describe('Money arithmetic', () => {
 
   test('throws a currency mismatch on add, subtract and comparison', () => {
     expect(() => brl('1.00').add(usd('1.00'))).toThrow(CurrencyMismatchError);
-    expect(() => brl('1.00').subtract(usd('1.00'))).toThrow(CurrencyMismatchError);
-    expect(() => brl('1.00').isLessThan(usd('1.00'))).toThrow(CurrencyMismatchError);
+    expect(() => brl('1.00').subtract(usd('1.00'))).toThrow(
+      CurrencyMismatchError,
+    );
+    expect(() => brl('1.00').isLessThan(usd('1.00'))).toThrow(
+      CurrencyMismatchError,
+    );
   });
 });
 
@@ -100,9 +124,21 @@ describe('Money comparisons', () => {
     const cent = brl('0.01');
     const negative = cent.negate();
 
-    expect([zero.isZero(), zero.isPositive(), zero.isNegative()]).toEqual([true, false, false]);
-    expect([cent.isZero(), cent.isPositive(), cent.isNegative()]).toEqual([false, true, false]);
-    expect([negative.isZero(), negative.isPositive(), negative.isNegative()]).toEqual([false, false, true]);
+    expect([zero.isZero(), zero.isPositive(), zero.isNegative()]).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    expect([cent.isZero(), cent.isPositive(), cent.isNegative()]).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    expect([
+      negative.isZero(),
+      negative.isPositive(),
+      negative.isNegative(),
+    ]).toEqual([false, false, true]);
   });
 
   test('compares amounts', () => {
@@ -135,7 +171,9 @@ describe('Money immutability and serialization', () => {
   });
 
   test('serializes as MoneyProps with a two-decimal string', () => {
-    expect(JSON.stringify(brl('25.00'))).toBe('{"amount":"25.00","currency":"BRL"}');
+    expect(JSON.stringify(brl('25.00'))).toBe(
+      '{"amount":"25.00","currency":"BRL"}',
+    );
   });
 
   test('refuses to be coerced into a JavaScript number', () => {

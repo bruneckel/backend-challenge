@@ -1,11 +1,18 @@
-import { IntegrationEvent, type EventContext, type IntegrationEventProps } from '@messaging/domain/integration-event';
+import {
+  IntegrationEvent,
+  type EventContext,
+  type IntegrationEventProps,
+} from '@messaging/domain/integration-event';
 import type { MoneyProps } from '@wallet/domain/money/money';
 import {
   InvalidTransactionStateError,
   WagerTransactionStatus,
   type WagerTransaction,
 } from '@wallet/domain/transaction/wager-transaction';
-import { transactionEventData, type TransactionEventData } from './transaction-event-data';
+import {
+  transactionEventData,
+  type TransactionEventData,
+} from './transaction-event-data';
 
 export interface WagerTransactionProcessedData extends TransactionEventData {
   referenceTransactionId: string | null;
@@ -17,14 +24,25 @@ export class WagerTransactionProcessed extends IntegrationEvent<WagerTransaction
   override readonly eventType = 'WagerTransactionProcessed';
   override readonly version = 1;
 
-  private constructor(props: IntegrationEventProps<WagerTransactionProcessedData>) {
+  private constructor(
+    props: IntegrationEventProps<WagerTransactionProcessedData>,
+  ) {
     super(props);
   }
 
-  static from(transaction: WagerTransaction, context: EventContext): WagerTransactionProcessed {
+  static from(
+    transaction: WagerTransaction,
+    context: EventContext,
+  ): WagerTransactionProcessed {
     const { resultBalance, processedAt } = transaction;
-    if (transaction.status !== WagerTransactionStatus.Processed || !resultBalance || !processedAt) {
-      throw new InvalidTransactionStateError(`Transaction ${transaction.id} is not processed`);
+    if (
+      transaction.status !== WagerTransactionStatus.Processed ||
+      !resultBalance ||
+      !processedAt
+    ) {
+      throw new InvalidTransactionStateError(
+        `Transaction ${transaction.id} is not processed`,
+      );
     }
     return new WagerTransactionProcessed({
       ...context,

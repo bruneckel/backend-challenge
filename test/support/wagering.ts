@@ -35,25 +35,47 @@ export interface Wagering {
 
 export const START = new Date('2026-10-02T12:00:00.000Z');
 
-export function createWagering(unitOfWork: UnitOfWork<WageringScope>, maxReferenceAttempts = 3): Wagering {
+export function createWagering(
+  unitOfWork: UnitOfWork<WageringScope>,
+  maxReferenceAttempts = 3,
+): Wagering {
   const clock = new FixedClock(START);
   const ids = new UuidV7Generator();
   const fingerprinter = new CanonicalJsonFingerprinter();
   const settlement = new SettlementPolicy({
     maxReferenceAttempts,
-    referenceBackoff: ExponentialBackoff.create({ baseMs: 1000, maxMs: 4000, random: () => 1 }),
+    referenceBackoff: ExponentialBackoff.create({
+      baseMs: 1000,
+      maxMs: 4000,
+      random: () => 1,
+    }),
   });
   return {
     clock,
     openWallet: new OpenWallet({ unitOfWork, fingerprinter, clock, ids }),
-    submit: new SubmitWagerTransaction({ unitOfWork, fingerprinter, clock, ids, settlement }),
-    processPendingReference: new ProcessPendingReference({ unitOfWork, clock, ids, settlement }),
+    submit: new SubmitWagerTransaction({
+      unitOfWork,
+      fingerprinter,
+      clock,
+      ids,
+      settlement,
+    }),
+    processPendingReference: new ProcessPendingReference({
+      unitOfWork,
+      clock,
+      ids,
+      settlement,
+    }),
     queries: new WalletQueries({ unitOfWork }),
     reconcile: new ReconcileWallet({ unitOfWork }),
   };
 }
 
-export function openWalletWith(wagering: Wagering, amount = '100.00', currency = 'BRL'): Promise<WalletView> {
+export function openWalletWith(
+  wagering: Wagering,
+  amount = '100.00',
+  currency = 'BRL',
+): Promise<WalletView> {
   return wagering.openWallet.execute({
     playerId: Bun.randomUUIDv7(),
     initialBalance: { amount, currency },

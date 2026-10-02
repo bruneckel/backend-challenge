@@ -2,7 +2,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { IsolationLevel } from '@mikro-orm/core';
 import type { EntityManager, MikroORM } from '@mikro-orm/postgresql';
 import { TransientFailure } from '@shared/application/transient-failure';
-import { NestedUnitOfWorkError, type UnitOfWork } from '@shared/application/unit-of-work';
+import {
+  NestedUnitOfWorkError,
+  type UnitOfWork,
+} from '@shared/application/unit-of-work';
 import { classifyDatabaseError } from './database-failure';
 
 const activeUnitOfWork = new AsyncLocalStorage<true>();
@@ -30,10 +33,16 @@ export class MikroOrmUnitOfWork<TScope> implements UnitOfWork<TScope> {
   }
 
   private transaction<T>(work: (scope: TScope) => Promise<T>): Promise<T> {
-    const em = this.orm.em.fork({ clear: true, disableContextResolution: true });
+    const em = this.orm.em.fork({
+      clear: true,
+      disableContextResolution: true,
+    });
     return em.transactional(
       async (transactionEm) => {
-        await transactionEm.execute('select set_config(?, ?, true)', ['lock_timeout', `${this.settings.lockTimeoutMs}ms`]);
+        await transactionEm.execute('select set_config(?, ?, true)', [
+          'lock_timeout',
+          `${this.settings.lockTimeoutMs}ms`,
+        ]);
         return work(this.scopeFor(transactionEm));
       },
       { isolationLevel: IsolationLevel.READ_COMMITTED },
@@ -43,5 +52,7 @@ export class MikroOrmUnitOfWork<TScope> implements UnitOfWork<TScope> {
 
 function asTransientFailure(error: unknown): TransientFailure | undefined {
   const failure = classifyDatabaseError(error);
-  return failure.kind === 'transient' ? new TransientFailure(failure.reason, { cause: error }) : undefined;
+  return failure.kind === 'transient'
+    ? new TransientFailure(failure.reason, { cause: error })
+    : undefined;
 }

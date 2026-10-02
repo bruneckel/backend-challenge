@@ -48,7 +48,9 @@ export abstract class IntegrationEvent<T> {
       eventType: this.eventType,
       aggregateId: this.aggregateId,
       correlationId: this.correlationId,
-      ...(this.causationId === undefined ? {} : { causationId: this.causationId }),
+      ...(this.causationId === undefined
+        ? {}
+        : { causationId: this.causationId }),
       occurredAt: this.occurredAt.toISOString(),
       version: this.version,
       data: this.data as T,

@@ -1,4 +1,6 @@
-export async function rejectionOf(work: PromiseLike<unknown>): Promise<unknown> {
+export async function rejectionOf(
+  work: PromiseLike<unknown>,
+): Promise<unknown> {
   try {
     await work;
   } catch (error) {
@@ -22,7 +24,9 @@ export async function waitUntil(
   const deadline = Date.now() + timeoutMs;
   while (!(await condition())) {
     if (Date.now() > deadline) {
-      throw new Error(`Timed out after ${timeoutMs} ms waiting for ${description}`);
+      throw new Error(
+        `Timed out after ${timeoutMs} ms waiting for ${description}`,
+      );
     }
     await Bun.sleep(intervalMs);
   }

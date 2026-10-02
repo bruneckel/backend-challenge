@@ -87,7 +87,9 @@ describe('MikroORM 7 on Bun with PostgreSQL 18', () => {
   test('rejects a value with three decimals instead of rounding it', async () => {
     await resetAccount('10.00');
 
-    const write = orm.em.fork().nativeUpdate(SpikeAccount, { id: 1 }, { balance: '10.005' });
+    const write = orm.em
+      .fork()
+      .nativeUpdate(SpikeAccount, { id: 1 }, { balance: '10.005' });
 
     expect(write).rejects.toMatchObject({ code: '23514' });
   });
@@ -128,7 +130,12 @@ describe('MikroORM 7 on Bun with PostgreSQL 18', () => {
 
     const [, balanceSeenBySecond] = await Promise.all([first, second]);
 
-    expect(order).toEqual(['first locked', 'second waiting', 'first done', 'second locked']);
+    expect(order).toEqual([
+      'first locked',
+      'second waiting',
+      'first done',
+      'second locked',
+    ]);
     expect(balanceSeenBySecond).toBe('20.00');
   });
 
@@ -150,14 +157,18 @@ describe('MikroORM 7 on Bun with PostgreSQL 18', () => {
     });
 
     const holder = orm.em.fork().transactional(async (em) => {
-      await em.findOneOrFail(SpikeAccount, 1, { lockMode: LockMode.PESSIMISTIC_WRITE });
+      await em.findOneOrFail(SpikeAccount, 1, {
+        lockMode: LockMode.PESSIMISTIC_WRITE,
+      });
       await held;
     });
     await Bun.sleep(50);
 
     const waiter = orm.em.fork().transactional(async (em) => {
       await em.execute("set local lock_timeout = '100ms'");
-      await em.findOneOrFail(SpikeAccount, 1, { lockMode: LockMode.PESSIMISTIC_WRITE });
+      await em.findOneOrFail(SpikeAccount, 1, {
+        lockMode: LockMode.PESSIMISTIC_WRITE,
+      });
     });
 
     await expect(waiter).rejects.toMatchObject({ code: '55P03' });
@@ -168,7 +179,9 @@ describe('MikroORM 7 on Bun with PostgreSQL 18', () => {
   test('surfaces unique violations with SQLSTATE 23505', async () => {
     await resetAccount('100.00');
 
-    const duplicate = orm.em.fork().insert(SpikeAccount, { id: 1, balance: '1.00', version: 1 });
+    const duplicate = orm.em
+      .fork()
+      .insert(SpikeAccount, { id: 1, balance: '1.00', version: 1 });
 
     expect(duplicate).rejects.toMatchObject({ code: '23505' });
   });
@@ -180,7 +193,11 @@ describe('MikroORM 7 on Bun with PostgreSQL 18', () => {
       await em.nativeUpdate(SpikeAccount, { id: 1 }, { balance: '30.00' });
       await em
         .transactional(async (inner) => {
-          await inner.nativeUpdate(SpikeAccount, { id: 1 }, { balance: '40.00' });
+          await inner.nativeUpdate(
+            SpikeAccount,
+            { id: 1 },
+            { balance: '40.00' },
+          );
           throw new Error('inner failure');
         })
         .catch(() => undefined);

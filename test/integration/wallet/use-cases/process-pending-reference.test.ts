@@ -1,8 +1,24 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
 import { commandFor, referencing } from '@test/support/commands';
 import { walletInvariantViolations } from '@test/support/invariants';
-import { type PersistenceHarness, createPersistenceHarness } from '@test/support/persistence';
-import { START, type Wagering, createWagering, openWalletWith } from '@test/support/wagering';
+import {
+  type PersistenceHarness,
+  createPersistenceHarness,
+} from '@test/support/persistence';
+import {
+  START,
+  type Wagering,
+  createWagering,
+  openWalletWith,
+} from '@test/support/wagering';
 import type { WalletView } from '@wallet/application/views';
 import { WagerTransactionKind } from '@wallet/domain/transaction/wager-transaction';
 
@@ -23,7 +39,9 @@ beforeEach(() => {
 
 afterEach(async () => {
   for (const walletId of touchedWallets) {
-    expect(await walletInvariantViolations(harness.database.sql, walletId)).toEqual([]);
+    expect(
+      await walletInvariantViolations(harness.database.sql, walletId),
+    ).toEqual([]);
   }
   touchedWallets.clear();
 });
@@ -37,7 +55,12 @@ async function waitingRefund() {
   touchedWallets.add(wallet.id);
   const bet = commandFor(wallet, Bet, '10.00');
   const refund = await wagering.submit.execute(referencing(bet, Refund));
-  return { wallet, bet, refund, candidate: { transactionId: refund.transactionId, walletId: wallet.id } };
+  return {
+    wallet,
+    bet,
+    refund,
+    candidate: { transactionId: refund.transactionId, walletId: wallet.id },
+  };
 }
 
 async function storedTransaction(transactionId: string) {
@@ -71,14 +94,22 @@ describe('ProcessPendingReference', () => {
       next_reference_attempt_at: null,
       result_balance: '100.00',
     });
-    expect((await eventTypes(wallet.id)).slice(-2)).toEqual(['WagerTransactionProcessed', 'WalletBalanceChanged']);
+    expect((await eventTypes(wallet.id)).slice(-2)).toEqual([
+      'WagerTransactionProcessed',
+      'WalletBalanceChanged',
+    ]);
   });
 
   test('leaves a waiting transaction alone until it is due', async () => {
     const { candidate, refund } = await waitingRefund();
 
-    expect(await wagering.processPendingReference.execute(candidate)).toBe('skipped');
-    expect(await storedTransaction(refund.transactionId)).toMatchObject({ status: 'PENDING_REFERENCE', reference_attempts: 0 });
+    expect(await wagering.processPendingReference.execute(candidate)).toBe(
+      'skipped',
+    );
+    expect(await storedTransaction(refund.transactionId)).toMatchObject({
+      status: 'PENDING_REFERENCE',
+      reference_attempts: 0,
+    });
   });
 
   test('schedules another attempt with a longer backoff while the reference is missing', async () => {
@@ -113,7 +144,9 @@ describe('ProcessPendingReference', () => {
       next_reference_attempt_at: null,
       result_balance: '100.00',
     });
-    expect((await eventTypes(wallet.id)).at(-1)).toBe('WagerTransactionRejected');
+    expect((await eventTypes(wallet.id)).at(-1)).toBe(
+      'WagerTransactionRejected',
+    );
   });
 
   test('lets only one of two concurrent workers settle the same candidate', async () => {
@@ -135,6 +168,11 @@ describe('ProcessPendingReference', () => {
     const bet = await wagering.submit.execute(commandFor(wallet, Bet, '10.00'));
     wagering.clock.set(later(3600));
 
-    expect(await wagering.processPendingReference.execute({ transactionId: bet.transactionId, walletId: wallet.id })).toBe('skipped');
+    expect(
+      await wagering.processPendingReference.execute({
+        transactionId: bet.transactionId,
+        walletId: wallet.id,
+      }),
+    ).toBe('skipped');
   });
 });

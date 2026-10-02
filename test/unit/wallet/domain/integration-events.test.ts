@@ -1,11 +1,19 @@
 import { describe, expect, test } from 'bun:test';
-import { LATER, brl, pendingTransaction, walletWith } from '@test/support/wallet-fixtures';
+import {
+  LATER,
+  brl,
+  pendingTransaction,
+  walletWith,
+} from '@test/support/wallet-fixtures';
 import { WagerTransactionPendingReference } from '@wallet/domain/events/wager-transaction-pending-reference';
 import { WagerTransactionProcessed } from '@wallet/domain/events/wager-transaction-processed';
 import { WagerTransactionRejected } from '@wallet/domain/events/wager-transaction-rejected';
 import { WalletBalanceChanged } from '@wallet/domain/events/wallet-balance-changed';
 import { FailureCode } from '@wallet/domain/transaction/failure-code';
-import { InvalidTransactionStateError, WagerTransactionKind } from '@wallet/domain/transaction/wager-transaction';
+import {
+  InvalidTransactionStateError,
+  WagerTransactionKind,
+} from '@wallet/domain/transaction/wager-transaction';
 
 const context = {
   eventId: 'event-1',
@@ -14,15 +22,23 @@ const context = {
   occurredAt: LATER,
 };
 
-const serialized = (event: { toJSON(): unknown }) => JSON.parse(JSON.stringify(event));
+const serialized = (event: { toJSON(): unknown }) =>
+  JSON.parse(JSON.stringify(event));
 
 const bet = () =>
-  pendingTransaction(WagerTransactionKind.Bet, brl('25.00'), { id: 'tx-1', externalTransactionId: 'ext-1' });
+  pendingTransaction(WagerTransactionKind.Bet, brl('25.00'), {
+    id: 'tx-1',
+    externalTransactionId: 'ext-1',
+  });
 
 describe('WalletBalanceChanged', () => {
   test('serializes the ledger movement with money as decimal strings', () => {
     const wallet = walletWith('100.00');
-    const entry = wallet.debit(brl('80.00'), { transactionId: 'tx-1', entryId: 'entry-1', at: LATER });
+    const entry = wallet.debit(brl('80.00'), {
+      transactionId: 'tx-1',
+      entryId: 'entry-1',
+      at: LATER,
+    });
 
     const event = WalletBalanceChanged.from(wallet, entry, context);
 
@@ -51,7 +67,11 @@ describe('WalletBalanceChanged', () => {
 
   test('round-trips through JSON as plain data', () => {
     const wallet = walletWith('100.00');
-    const entry = wallet.credit(brl('1.00'), { transactionId: 'tx-1', entryId: 'entry-1', at: LATER });
+    const entry = wallet.credit(brl('1.00'), {
+      transactionId: 'tx-1',
+      entryId: 'entry-1',
+      at: LATER,
+    });
 
     const event = WalletBalanceChanged.from(wallet, entry, context);
 
@@ -60,9 +80,16 @@ describe('WalletBalanceChanged', () => {
 
   test('omits the causation id when there is none', () => {
     const wallet = walletWith('100.00');
-    const entry = wallet.credit(brl('1.00'), { transactionId: 'tx-1', entryId: 'entry-1', at: LATER });
+    const entry = wallet.credit(brl('1.00'), {
+      transactionId: 'tx-1',
+      entryId: 'entry-1',
+      at: LATER,
+    });
 
-    const envelope = WalletBalanceChanged.from(wallet, entry, { ...context, causationId: undefined }).toJSON();
+    const envelope = WalletBalanceChanged.from(wallet, entry, {
+      ...context,
+      causationId: undefined,
+    }).toJSON();
 
     expect('causationId' in envelope).toBe(false);
   });
@@ -95,7 +122,9 @@ describe('WagerTransactionProcessed', () => {
   });
 
   test('can only describe a processed transaction', () => {
-    expect(() => WagerTransactionProcessed.from(bet(), context)).toThrow(InvalidTransactionStateError);
+    expect(() => WagerTransactionProcessed.from(bet(), context)).toThrow(
+      InvalidTransactionStateError,
+    );
   });
 });
 
@@ -116,16 +145,22 @@ describe('WagerTransactionRejected', () => {
   });
 
   test('can only describe a rejected transaction', () => {
-    expect(() => WagerTransactionRejected.from(bet(), context)).toThrow(InvalidTransactionStateError);
+    expect(() => WagerTransactionRejected.from(bet(), context)).toThrow(
+      InvalidTransactionStateError,
+    );
   });
 });
 
 describe('WagerTransactionPendingReference', () => {
   test('names the missing reference and the next check', () => {
-    const refund = pendingTransaction(WagerTransactionKind.Refund, brl('25.00'), {
-      id: 'tx-2',
-      referenceExternalTransactionId: 'ext-1',
-    });
+    const refund = pendingTransaction(
+      WagerTransactionKind.Refund,
+      brl('25.00'),
+      {
+        id: 'tx-2',
+        referenceExternalTransactionId: 'ext-1',
+      },
+    );
     refund.markPendingReference(brl('100.00'), LATER, LATER);
 
     const event = WagerTransactionPendingReference.from(refund, context);
@@ -140,6 +175,8 @@ describe('WagerTransactionPendingReference', () => {
   });
 
   test('can only describe a transaction waiting for its reference', () => {
-    expect(() => WagerTransactionPendingReference.from(bet(), context)).toThrow(InvalidTransactionStateError);
+    expect(() => WagerTransactionPendingReference.from(bet(), context)).toThrow(
+      InvalidTransactionStateError,
+    );
   });
 });

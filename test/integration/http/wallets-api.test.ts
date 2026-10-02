@@ -13,13 +13,20 @@ afterAll(async () => {
 
 const brl = (amount: string) => ({ amount, currency: 'BRL' });
 
-async function openWallet(amount = '100.00'): Promise<{ id: string; playerId: string }> {
-  const response = await api.request('POST', '/wallets', { body: { playerId: Bun.randomUUIDv7(), initialBalance: brl(amount) } });
+async function openWallet(
+  amount = '100.00',
+): Promise<{ id: string; playerId: string }> {
+  const response = await api.request('POST', '/wallets', {
+    body: { playerId: Bun.randomUUIDv7(), initialBalance: brl(amount) },
+  });
   expect(response.status).toBe(201);
   return response.body;
 }
 
-async function bet(wallet: { id: string; playerId: string }, amount: string): Promise<void> {
+async function bet(
+  wallet: { id: string; playerId: string },
+  amount: string,
+): Promise<void> {
   const externalTransactionId = `ext-${Bun.randomUUIDv7()}`;
   const response = await api.request('POST', '/wagering/transactions', {
     headers: { 'idempotency-key': `provider-a:${externalTransactionId}` },
@@ -37,20 +44,30 @@ async function bet(wallet: { id: string; playerId: string }, amount: string): Pr
   expect(response.status).toBe(200);
 }
 
-function expectProblem(response: { status: number; headers: Headers; body: any }, status: number, code: string): void {
+function expectProblem(
+  response: { status: number; headers: Headers; body: any },
+  status: number,
+  code: string,
+): void {
   expect(response.status).toBe(status);
-  expect(response.headers.get('content-type')).toContain('application/problem+json');
+  expect(response.headers.get('content-type')).toContain(
+    'application/problem+json',
+  );
   expect(response.body).toMatchObject({ type: 'about:blank', status, code });
   expect(typeof response.body.title).toBe('string');
   expect(typeof response.body.retryable).toBe('boolean');
-  expect(response.body.correlationId).toBe(response.headers.get('x-correlation-id'));
+  expect(response.body.correlationId).toBe(
+    response.headers.get('x-correlation-id'),
+  );
 }
 
 describe('POST /wallets', () => {
   test('opens a wallet and answers 201 with its balance and version', async () => {
     const playerId = Bun.randomUUIDv7();
 
-    const response = await api.request('POST', '/wallets', { body: { playerId, initialBalance: brl('1000.00') } });
+    const response = await api.request('POST', '/wallets', {
+      body: { playerId, initialBalance: brl('1000.00') },
+    });
 
     expect(response.status).toBe(201);
     expect(response.body).toEqual({
@@ -65,7 +82,9 @@ describe('POST /wallets', () => {
   test('answers 409 WALLET_ALREADY_EXISTS for a second wallet of the same player and currency', async () => {
     const wallet = await openWallet();
 
-    const response = await api.request('POST', '/wallets', { body: { playerId: wallet.playerId, initialBalance: brl('5.00') } });
+    const response = await api.request('POST', '/wallets', {
+      body: { playerId: wallet.playerId, initialBalance: brl('5.00') },
+    });
 
     expectProblem(response, 409, 'WALLET_ALREADY_EXISTS');
     expect(response.body.retryable).toBe(false);
@@ -73,17 +92,52 @@ describe('POST /wallets', () => {
 
   test.each([
     ['a missing player', { initialBalance: brl('10.00') }],
-    ['a player id that is not a UUID', { playerId: 'player-1', initialBalance: brl('10.00') }],
-    ['an amount with one decimal', { playerId: Bun.randomUUIDv7(), initialBalance: brl('10.0') }],
-    ['an amount above seventeen integer digits', { playerId: Bun.randomUUIDv7(), initialBalance: brl('100000000000000000.00') }],
-    ['a numeric amount', { playerId: Bun.randomUUIDv7(), initialBalance: { amount: 10, currency: 'BRL' } }],
-    ['a lowercase currency', { playerId: Bun.randomUUIDv7(), initialBalance: { amount: '10.00', currency: 'brl' } }],
-    ['an unknown field', { playerId: Bun.randomUUIDv7(), initialBalance: brl('10.00'), bonus: true }],
+    [
+      'a player id that is not a UUID',
+      { playerId: 'player-1', initialBalance: brl('10.00') },
+    ],
+    [
+      'an amount with one decimal',
+      { playerId: Bun.randomUUIDv7(), initialBalance: brl('10.0') },
+    ],
+    [
+      'an amount above seventeen integer digits',
+      {
+        playerId: Bun.randomUUIDv7(),
+        initialBalance: brl('100000000000000000.00'),
+      },
+    ],
+    [
+      'a numeric amount',
+      {
+        playerId: Bun.randomUUIDv7(),
+        initialBalance: { amount: 10, currency: 'BRL' },
+      },
+    ],
+    [
+      'a lowercase currency',
+      {
+        playerId: Bun.randomUUIDv7(),
+        initialBalance: { amount: '10.00', currency: 'brl' },
+      },
+    ],
+    [
+      'an unknown field',
+      {
+        playerId: Bun.randomUUIDv7(),
+        initialBalance: brl('10.00'),
+        bonus: true,
+      },
+    ],
   ])('answers 400 INVALID_PAYLOAD for %s', async (_, body) => {
     const response = await api.request('POST', '/wallets', { body });
 
     expectProblem(response, 400, 'INVALID_PAYLOAD');
-    expect(response.body.errors).toEqual(expect.arrayContaining([expect.objectContaining({ path: expect.any(String) })]));
+    expect(response.body.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: expect.any(String) }),
+      ]),
+    );
   });
 
   test('answers 503 SERVICE_UNAVAILABLE while another opening for the same player is still in flight', async () => {
@@ -95,7 +149,9 @@ describe('POST /wallets', () => {
       values (${Bun.randomUUIDv7()}, ${playerId}, 'BRL', '0.00', 1, now(), now())`;
 
     try {
-      const response = await api.request('POST', '/wallets', { body: { playerId, initialBalance: brl('10.00') } });
+      const response = await api.request('POST', '/wallets', {
+        body: { playerId, initialBalance: brl('10.00') },
+      });
 
       expectProblem(response, 503, 'SERVICE_UNAVAILABLE');
       expect(response.headers.get('retry-after')).toBe('1');
@@ -106,18 +162,27 @@ describe('POST /wallets', () => {
   });
 
   test('answers 400 INVALID_PAYLOAD for malformed JSON', async () => {
-    const response = await api.request('POST', '/wallets', { body: '{"playerId":' });
+    const response = await api.request('POST', '/wallets', {
+      body: '{"playerId":',
+    });
 
     expectProblem(response, 400, 'INVALID_PAYLOAD');
   });
 
   test('echoes the correlation id it receives and creates one when absent', async () => {
-    const echoed = await api.request('GET', `/wallets/${Bun.randomUUIDv7()}`, { headers: { 'x-correlation-id': 'trace-123' } });
-    const generated = await api.request('GET', `/wallets/${Bun.randomUUIDv7()}`);
+    const echoed = await api.request('GET', `/wallets/${Bun.randomUUIDv7()}`, {
+      headers: { 'x-correlation-id': 'trace-123' },
+    });
+    const generated = await api.request(
+      'GET',
+      `/wallets/${Bun.randomUUIDv7()}`,
+    );
 
     expect(echoed.headers.get('x-correlation-id')).toBe('trace-123');
     expect(echoed.body.correlationId).toBe('trace-123');
-    expect(generated.headers.get('x-correlation-id')).toMatch(/^[0-9a-f-]{36}$/);
+    expect(generated.headers.get('x-correlation-id')).toMatch(
+      /^[0-9a-f-]{36}$/,
+    );
   });
 });
 
@@ -140,11 +205,19 @@ describe('GET /wallets/:walletId', () => {
   });
 
   test('answers 404 WALLET_NOT_FOUND for an unknown wallet', async () => {
-    expectProblem(await api.request('GET', `/wallets/${Bun.randomUUIDv7()}`), 404, 'WALLET_NOT_FOUND');
+    expectProblem(
+      await api.request('GET', `/wallets/${Bun.randomUUIDv7()}`),
+      404,
+      'WALLET_NOT_FOUND',
+    );
   });
 
   test('answers 400 INVALID_REQUEST for an id that is not a UUID', async () => {
-    expectProblem(await api.request('GET', '/wallets/wallet-1'), 400, 'INVALID_REQUEST');
+    expectProblem(
+      await api.request('GET', '/wallets/wallet-1'),
+      400,
+      'INVALID_REQUEST',
+    );
   });
 });
 
@@ -155,13 +228,27 @@ describe('GET /wallets/:walletId/ledger', () => {
     await bet(wallet, '2.00');
     await bet(wallet, '3.00');
 
-    const first = await api.request('GET', `/wallets/${wallet.id}/ledger?limit=2`);
-    const second = await api.request('GET', `/wallets/${wallet.id}/ledger?limit=2&cursor=${first.body.nextCursor}`);
+    const first = await api.request(
+      'GET',
+      `/wallets/${wallet.id}/ledger?limit=2`,
+    );
+    const second = await api.request(
+      'GET',
+      `/wallets/${wallet.id}/ledger?limit=2&cursor=${first.body.nextCursor}`,
+    );
 
     expect(first.status).toBe(200);
-    expect(first.body.items.map((item: { walletVersion: number }) => item.walletVersion)).toEqual([4, 3]);
+    expect(
+      first.body.items.map(
+        (item: { walletVersion: number }) => item.walletVersion,
+      ),
+    ).toEqual([4, 3]);
     expect(first.body.nextCursor).toMatch(/^[A-Za-z0-9_-]+$/);
-    expect(second.body.items.map((item: { walletVersion: number }) => item.walletVersion)).toEqual([2, 1]);
+    expect(
+      second.body.items.map(
+        (item: { walletVersion: number }) => item.walletVersion,
+      ),
+    ).toEqual([2, 1]);
     expect(second.body.nextCursor).toBeNull();
     expect(second.body.items[0]).toEqual({
       id: expect.any(String),
@@ -181,31 +268,51 @@ describe('GET /wallets/:walletId/ledger', () => {
     const response = await api.request('GET', `/wallets/${wallet.id}/ledger`);
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ items: [expect.objectContaining({ walletVersion: 1 })], nextCursor: null });
+    expect(response.body).toEqual({
+      items: [expect.objectContaining({ walletVersion: 1 })],
+      nextCursor: null,
+    });
   });
 
-  test.each([['limit=0'], ['limit=101'], ['limit=two'], ['limit=1.5'], ['page=2']])(
-    'answers 400 INVALID_REQUEST for %s',
-    async (query) => {
-      const wallet = await openWallet();
+  test.each([
+    ['limit=0'],
+    ['limit=101'],
+    ['limit=two'],
+    ['limit=1.5'],
+    ['page=2'],
+  ])('answers 400 INVALID_REQUEST for %s', async (query) => {
+    const wallet = await openWallet();
 
-      expectProblem(await api.request('GET', `/wallets/${wallet.id}/ledger?${query}`), 400, 'INVALID_REQUEST');
-    },
-  );
+    expectProblem(
+      await api.request('GET', `/wallets/${wallet.id}/ledger?${query}`),
+      400,
+      'INVALID_REQUEST',
+    );
+  });
 
   test('answers 400 INVALID_CURSOR for a cursor issued for another wallet', async () => {
     const other = await openWallet('100.00');
     await bet(other, '1.00');
-    const page = await api.request('GET', `/wallets/${other.id}/ledger?limit=1`);
+    const page = await api.request(
+      'GET',
+      `/wallets/${other.id}/ledger?limit=1`,
+    );
     const wallet = await openWallet();
 
-    const response = await api.request('GET', `/wallets/${wallet.id}/ledger?cursor=${page.body.nextCursor}`);
+    const response = await api.request(
+      'GET',
+      `/wallets/${wallet.id}/ledger?cursor=${page.body.nextCursor}`,
+    );
 
     expectProblem(response, 400, 'INVALID_CURSOR');
   });
 
   test('answers 404 WALLET_NOT_FOUND for an unknown wallet', async () => {
-    expectProblem(await api.request('GET', `/wallets/${Bun.randomUUIDv7()}/ledger`), 404, 'WALLET_NOT_FOUND');
+    expectProblem(
+      await api.request('GET', `/wallets/${Bun.randomUUIDv7()}/ledger`),
+      404,
+      'WALLET_NOT_FOUND',
+    );
   });
 });
 
@@ -214,7 +321,10 @@ describe('POST /wallets/:walletId/reconciliation', () => {
     const wallet = await openWallet('100.00');
     await bet(wallet, '25.00');
 
-    const response = await api.request('POST', `/wallets/${wallet.id}/reconciliation`);
+    const response = await api.request(
+      'POST',
+      `/wallets/${wallet.id}/reconciliation`,
+    );
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
@@ -229,20 +339,38 @@ describe('POST /wallets/:walletId/reconciliation', () => {
 
   test('answers 200 flagging a stored balance that drifted from the ledger', async () => {
     const wallet = await openWallet('100.00');
-    await api.database.sql`update wallets set balance_amount = '99.00' where id = ${wallet.id}`;
+    await api.database
+      .sql`update wallets set balance_amount = '99.00' where id = ${wallet.id}`;
 
-    const response = await api.request('POST', `/wallets/${wallet.id}/reconciliation`);
+    const response = await api.request(
+      'POST',
+      `/wallets/${wallet.id}/reconciliation`,
+    );
 
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ consistent: false, difference: { amount: '-1.00', currency: 'BRL' } });
+    expect(response.body).toMatchObject({
+      consistent: false,
+      difference: { amount: '-1.00', currency: 'BRL' },
+    });
   });
 
   test('answers 404 WALLET_NOT_FOUND for an unknown wallet', async () => {
-    expectProblem(await api.request('POST', `/wallets/${Bun.randomUUIDv7()}/reconciliation`), 404, 'WALLET_NOT_FOUND');
+    expectProblem(
+      await api.request(
+        'POST',
+        `/wallets/${Bun.randomUUIDv7()}/reconciliation`,
+      ),
+      404,
+      'WALLET_NOT_FOUND',
+    );
   });
 
   test('answers 400 INVALID_REQUEST for an id that is not a UUID', async () => {
-    expectProblem(await api.request('POST', '/wallets/wallet-1/reconciliation'), 400, 'INVALID_REQUEST');
+    expectProblem(
+      await api.request('POST', '/wallets/wallet-1/reconciliation'),
+      400,
+      'INVALID_REQUEST',
+    );
   });
 });
 

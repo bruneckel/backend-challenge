@@ -3,15 +3,22 @@ import type { IdGenerator } from '@shared/application/id-generator';
 import type { UnitOfWork } from '@shared/application/unit-of-work';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
 import { TransactionSettler } from '@wallet/application/transaction-settler';
-import type { SettlementOutcome, SettlementPolicy } from '@wallet/domain/settlement/settlement-policy';
-import { type WagerTransaction, WagerTransactionStatus } from '@wallet/domain/transaction/wager-transaction';
+import type {
+  SettlementOutcome,
+  SettlementPolicy,
+} from '@wallet/domain/settlement/settlement-policy';
+import {
+  type WagerTransaction,
+  WagerTransactionStatus,
+} from '@wallet/domain/transaction/wager-transaction';
 
 export interface PendingReferenceCandidate {
   transactionId: string;
   walletId: string;
 }
 
-export type PendingReferenceOutcome = 'processed' | 'rejected' | 'still_pending' | 'skipped';
+export type PendingReferenceOutcome =
+  'processed' | 'rejected' | 'still_pending' | 'skipped';
 
 export interface ProcessPendingReferenceDependencies {
   unitOfWork: UnitOfWork<WageringScope>;
@@ -33,18 +40,27 @@ export class ProcessPendingReference {
     this.settler = new TransactionSettler(deps.settlement, deps.ids);
   }
 
-  execute(candidate: PendingReferenceCandidate): Promise<PendingReferenceOutcome> {
+  execute(
+    candidate: PendingReferenceCandidate,
+  ): Promise<PendingReferenceOutcome> {
     return this.deps.unitOfWork.run(async (scope) => {
       const wallet = await scope.wallets.lockForUpdate(candidate.walletId);
       if (wallet === null) {
         return 'skipped';
       }
-      const transaction = await scope.transactions.lockById(candidate.transactionId);
+      const transaction = await scope.transactions.lockById(
+        candidate.transactionId,
+      );
       const at = this.deps.clock.now();
       if (!isDueForReference(transaction, wallet.id, at)) {
         return 'skipped';
       }
-      const settlement = await this.settler.settle(scope, transaction, wallet, at);
+      const settlement = await this.settler.settle(
+        scope,
+        transaction,
+        wallet,
+        at,
+      );
       await this.settler.recordProgress(scope, settlement, {
         correlationId: transaction.correlationId,
         causationId: transaction.id,
@@ -55,7 +71,11 @@ export class ProcessPendingReference {
   }
 }
 
-function isDueForReference(transaction: WagerTransaction | null, walletId: string, at: Date): transaction is WagerTransaction {
+function isDueForReference(
+  transaction: WagerTransaction | null,
+  walletId: string,
+  at: Date,
+): transaction is WagerTransaction {
   return (
     transaction !== null &&
     transaction.walletId === walletId &&

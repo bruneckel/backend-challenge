@@ -124,7 +124,9 @@ export class OutboxMessage {
 
   private assertPending(): void {
     if (!this.isPending()) {
-      throw new InvalidOutboxStateError(`Event ${this.id} was already published`);
+      throw new InvalidOutboxStateError(
+        `Event ${this.id} was already published`,
+      );
     }
   }
 }

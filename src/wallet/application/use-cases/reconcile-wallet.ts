@@ -20,7 +20,9 @@ export class ReconcileWallet {
   constructor(private readonly deps: ReconcileWalletDependencies) {}
 
   async execute(walletId: string): Promise<ReconciliationReport> {
-    const snapshot = await this.deps.unitOfWork.run(({ ledger }) => ledger.reconciliationSnapshot(walletId));
+    const snapshot = await this.deps.unitOfWork.run(({ ledger }) =>
+      ledger.reconciliationSnapshot(walletId),
+    );
     if (snapshot === null) {
       throw new WalletNotFoundError(walletId);
     }

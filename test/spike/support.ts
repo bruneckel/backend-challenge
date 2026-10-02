@@ -1,9 +1,11 @@
 import { SQSClient } from '@aws-sdk/client-sqs';
 
 export const DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgresql://wagering:wagering@localhost:5432/wagering';
+  process.env.DATABASE_URL ??
+  'postgresql://wagering:wagering@localhost:5432/wagering';
 
-export const SQS_ENDPOINT = process.env.AWS_ENDPOINT_URL ?? 'http://localhost:4566';
+export const SQS_ENDPOINT =
+  process.env.AWS_ENDPOINT_URL ?? 'http://localhost:4566';
 
 export function createSqsClient(): SQSClient {
   return new SQSClient({

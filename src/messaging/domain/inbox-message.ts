@@ -30,13 +30,27 @@ export class InboxMessage {
 
   static receive(props: ReceiveInboxProps): InboxMessage {
     if (props.messageId.length === 0 || props.consumerName.length === 0) {
-      throw new InvalidInboxMessageError('Inbox messages need a message id and a consumer name');
+      throw new InvalidInboxMessageError(
+        'Inbox messages need a message id and a consumer name',
+      );
     }
-    return new InboxMessage(props.messageId, props.consumerName, props.payloadHash, props.receivedAt, undefined);
+    return new InboxMessage(
+      props.messageId,
+      props.consumerName,
+      props.payloadHash,
+      props.receivedAt,
+      undefined,
+    );
   }
 
   static rehydrate(state: InboxMessageState): InboxMessage {
-    return new InboxMessage(state.messageId, state.consumerName, state.payloadHash, state.receivedAt, state.processedAt);
+    return new InboxMessage(
+      state.messageId,
+      state.consumerName,
+      state.payloadHash,
+      state.receivedAt,
+      state.processedAt,
+    );
   }
 
   get processedAt(): Date | undefined {
@@ -49,7 +63,9 @@ export class InboxMessage {
 
   markProcessed(at: Date): void {
     if (this.isProcessed()) {
-      throw new InvalidInboxStateError(`Message ${this.messageId} was already processed`);
+      throw new InvalidInboxStateError(
+        `Message ${this.messageId} was already processed`,
+      );
     }
     this._processedAt = at;
   }
