@@ -7,6 +7,7 @@ import { createSqsClient } from '@messaging/infrastructure/sqs/sqs-client';
 import { SqsEventPublisher } from '@messaging/infrastructure/sqs/sqs-event-publisher';
 import { MikroOrmUnitOfWork } from '@platform/database/mikro-orm-unit-of-work';
 import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
+import { inconsistentWallets } from '@test/support/invariants';
 import { commandFor } from '@test/support/commands';
 import { insertRow } from '@test/support/database';
 import { RecordingMetrics } from '@test/support/recording-metrics';
@@ -53,9 +54,13 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await queues.delete();
-  sqs.destroy();
-  await harness.close();
+  try {
+    expect(await inconsistentWallets(harness.database.sql)).toEqual([]);
+  } finally {
+    await queues.delete();
+    sqs.destroy();
+    await harness.close();
+  }
 });
 
 function publishing(

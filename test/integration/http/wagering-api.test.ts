@@ -1,5 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
 import { CanonicalJsonFingerprinter } from '@platform/crypto/canonical-json-fingerprinter';
+import { inconsistentWallets } from '@test/support/invariants';
 import { type ApiHarness, startApi } from '@test/support/api';
 import { insertRow } from '@test/support/database';
 import { transactionRow } from '@test/support/schema-rows';
@@ -17,6 +25,10 @@ beforeAll(async () => {
     REFERENCE_BACKOFF_BASE_MS: '10',
     REFERENCE_BACKOFF_MAX_MS: '40',
   });
+});
+
+afterEach(async () => {
+  expect(await inconsistentWallets(api.database.sql)).toEqual([]);
 });
 
 afterAll(async () => {

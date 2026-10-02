@@ -1,7 +1,15 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
 import type { EntityManager } from '@mikro-orm/postgresql';
 import { InboxMessage } from '@messaging/domain/inbox-message';
 import { MikroOrmUnitOfWork } from '@platform/database/mikro-orm-unit-of-work';
+import { inconsistentWallets } from '@test/support/invariants';
 import {
   AT,
   HASH,
@@ -21,6 +29,10 @@ let harness: PersistenceHarness;
 
 beforeAll(async () => {
   harness = await createPersistenceHarness();
+});
+
+afterEach(async () => {
+  expect(await inconsistentWallets(harness.database.sql)).toEqual([]);
 });
 
 afterAll(async () => {

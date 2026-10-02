@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
+import { inconsistentWallets } from '@test/support/invariants';
 import { rejectionOf } from '@test/support/async';
 import { commandFor } from '@test/support/commands';
 import { insertRow } from '@test/support/database';
@@ -17,11 +25,18 @@ import { WagerTransactionKind } from '@wallet/domain/transaction/wager-transacti
 
 let harness: PersistenceHarness;
 let wagering: Wagering;
+const corruptedOnPurpose: string[] = [];
 const { Bet, Win } = WagerTransactionKind;
 
 beforeAll(async () => {
   harness = await createPersistenceHarness();
   wagering = createWagering(harness.unitOfWork);
+});
+
+afterEach(async () => {
+  expect(
+    await inconsistentWallets(harness.database.sql, corruptedOnPurpose),
+  ).toEqual([]);
 });
 
 afterAll(async () => {
@@ -58,6 +73,7 @@ describe('ReconcileWallet', () => {
 
   test('flags a stored balance that drifted from the ledger without fixing it', async () => {
     const wallet = await openWalletWith(wagering, '100.00');
+    corruptedOnPurpose.push(wallet.id);
     await harness.database
       .sql`update wallets set balance_amount = '101.50' where id = ${wallet.id}`;
 
@@ -76,6 +92,7 @@ describe('ReconcileWallet', () => {
 
   test('reports a negative calculated balance when the ledger is corrupted', async () => {
     const wallet = await openWalletWith(wagering, '50.00');
+    corruptedOnPurpose.push(wallet.id);
     const walletRow = {
       id: wallet.id,
       player_id: wallet.playerId,

@@ -8,6 +8,7 @@ import {
   test,
 } from 'bun:test';
 import type { Message, SQSClient } from '@aws-sdk/client-sqs';
+import { inconsistentWallets } from '@test/support/invariants';
 import { waitUntil } from '@test/support/async';
 import { commandFor } from '@test/support/commands';
 import {
@@ -48,6 +49,10 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await queues.delete();
+});
+
+afterEach(async () => {
+  expect(await inconsistentWallets(harness.database.sql)).toEqual([]);
 });
 
 afterAll(async () => {

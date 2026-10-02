@@ -1,5 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
 import { SendMessageCommand, type SQSClient } from '@aws-sdk/client-sqs';
+import { inconsistentWallets } from '@test/support/invariants';
 import { waitUntil } from '@test/support/async';
 import {
   type PersistenceHarness,
@@ -31,6 +39,10 @@ beforeAll(async () => {
   sqs = createTestSqsClient();
   queues = await createTestQueues(sqs);
   proxy = await startTcpProxy('127.0.0.1', 5432);
+});
+
+afterEach(async () => {
+  expect(await inconsistentWallets(harness.database.sql)).toEqual([]);
 });
 
 afterAll(async () => {
