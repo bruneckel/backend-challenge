@@ -1,5 +1,5 @@
 import Big from 'big.js';
-import { DomainError } from '../../../shared/domain/domain-error';
+import { DomainError } from '@shared/domain/domain-error';
 
 const Decimal = Big();
 Decimal.strict = true;

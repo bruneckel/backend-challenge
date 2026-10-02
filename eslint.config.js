@@ -10,6 +10,22 @@ export default defineConfig(
   js.configs.recommended,
   tseslint.configs.recommended,
   {
+    files: ['src/**/*.ts', 'test/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../*', '../**'],
+              message: 'Use a path alias such as @wallet/... or @shared/... instead of a parent-relative import.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['src/**/domain/**/*.ts', 'src/**/application/**/*.ts'],
     rules: {
       'no-restricted-globals': [

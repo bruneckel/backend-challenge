@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ExponentialBackoff } from '../../../../src/shared/domain/exponential-backoff';
+import { ExponentialBackoff } from '@shared/domain/exponential-backoff';
 
 describe('ExponentialBackoff', () => {
   test('doubles from the base delay until it reaches the cap', () => {

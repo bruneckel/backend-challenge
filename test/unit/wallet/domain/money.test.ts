@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CurrencyMismatchError, InvalidMoneyError, Money } from '../../../../src/wallet/domain/money/money';
+import { CurrencyMismatchError, InvalidMoneyError, Money } from '@wallet/domain/money/money';
 
 const brl = (amount: string) => Money.from({ amount, currency: 'BRL' });
 const usd = (amount: string) => Money.from({ amount, currency: 'USD' });
