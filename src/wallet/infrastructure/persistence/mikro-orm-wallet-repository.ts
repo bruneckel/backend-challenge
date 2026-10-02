@@ -21,6 +21,18 @@ export class MikroOrmWalletRepository implements WalletRepository {
     return row === null ? null : toWallet(row);
   }
 
+  async findByOwner(
+    playerId: string,
+    currency: string,
+  ): Promise<Wallet | null> {
+    const row = await this.em.findOne(
+      WalletRecord,
+      { playerId, currency },
+      { disableIdentityMap: true },
+    );
+    return row === null ? null : toWallet(row);
+  }
+
   async lockForUpdate(id: string): Promise<Wallet | null> {
     const row = await this.em.findOne(
       WalletRecord,

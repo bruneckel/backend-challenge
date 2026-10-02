@@ -71,6 +71,20 @@ describe('MikroOrmWalletRepository', () => {
     ).toBeNull();
   });
 
+  test('finds the wallet of a player by currency', async () => {
+    const wallet = await stored();
+
+    const [found, missing] = await harness.unitOfWork.run(({ wallets }) =>
+      Promise.all([
+        wallets.findByOwner(wallet.playerId, 'BRL'),
+        wallets.findByOwner(wallet.playerId, 'USD'),
+      ]),
+    );
+
+    expect(found?.id).toBe(wallet.id);
+    expect(missing).toBeNull();
+  });
+
   test('refuses a second wallet for the same player and currency', async () => {
     const wallet = await stored();
     const duplicate = Wallet.open({

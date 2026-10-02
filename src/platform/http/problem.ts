@@ -16,6 +16,7 @@ export interface HttpProblem {
   retryable: boolean;
   errors?: ProblemFieldError[];
   headers?: Record<string, string>;
+  details?: Readonly<Record<string, string>>;
 }
 
 interface ProblemType {
@@ -130,7 +131,12 @@ export function problemFor(error: unknown): HttpProblem {
   }
   if (error instanceof DomainError || error instanceof ApplicationError) {
     const code = ALIASES[error.code] ?? error.code;
-    return problem(PUBLIC_DOMAIN_CODES.has(code) ? code : 'INTERNAL_ERROR');
+    if (!PUBLIC_DOMAIN_CODES.has(code)) {
+      return problem('INTERNAL_ERROR');
+    }
+    const details =
+      error instanceof ApplicationError ? error.details : undefined;
+    return problem(code, details === undefined ? {} : { details });
   }
   if (error instanceof HttpException) {
     const status = error.getStatus();
@@ -143,7 +149,7 @@ export function problemFor(error: unknown): HttpProblem {
 
 function problem(
   code: string,
-  extra: Pick<HttpProblem, 'errors' | 'headers'> = {},
+  extra: Pick<HttpProblem, 'errors' | 'headers' | 'details'> = {},
 ): HttpProblem {
   const type = PROBLEM_TYPES[code] ?? PROBLEM_TYPES.INTERNAL_ERROR!;
   return {

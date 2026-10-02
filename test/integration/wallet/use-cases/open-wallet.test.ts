@@ -100,6 +100,7 @@ describe('OpenWallet', () => {
     const failure = await rejectionOf(open('20.00', first.playerId));
 
     expect(failure).toBeInstanceOf(WalletAlreadyExistsError);
+    expect((failure as WalletAlreadyExistsError).walletId).toBe(first.id);
     const [{ count }] = await harness.database
       .sql`select count(*)::int as count from wallets where player_id = ${first.playerId}`;
     expect(count).toBe(1);

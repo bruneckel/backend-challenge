@@ -88,6 +88,7 @@ describe('POST /wallets', () => {
 
     expectProblem(response, 409, 'WALLET_ALREADY_EXISTS');
     expect(response.body.retryable).toBe(false);
+    expect(response.body.walletId).toBe(wallet.id);
   });
 
   test.each([

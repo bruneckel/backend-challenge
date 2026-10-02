@@ -39,6 +39,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     httpAdapter.reply(
       response,
       {
+        ...problem.details,
         type: 'about:blank',
         title: problem.title,
         status: problem.status,

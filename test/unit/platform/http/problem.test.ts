@@ -203,6 +203,18 @@ describe('problemFor', () => {
     expect(problemFor(error)).toMatchObject({ status, code, retryable });
   });
 
+  test('points a duplicate wallet to the wallet that already exists', () => {
+    expect(
+      problemFor(new WalletAlreadyExistsError('p', 'BRL', { walletId: 'w-1' })),
+    ).toEqual({
+      status: 409,
+      code: 'WALLET_ALREADY_EXISTS',
+      title: 'The player already has a wallet in this currency',
+      retryable: false,
+      details: { walletId: 'w-1' },
+    });
+  });
+
   test('asks the client to come back after a second when the service is unavailable', () => {
     expect(problemFor(new TransientFailure('deadlock')).headers).toEqual({
       'retry-after': '1',
