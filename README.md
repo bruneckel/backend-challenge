@@ -78,7 +78,7 @@ Resposta: `200 {"transactionId":"…","status":"PROCESSED","balance":{"amount":"
 | `POST /wallets/:walletId/reconciliation` | compara o saldo com o ledger, sem alterar nada |
 | `GET /health/live` · `GET /health/ready` · `GET /metrics` | saúde e métricas Prometheus (api e worker) |
 
-Status: 200 processada, 202 aguardando referência, 422 rejeitada (com `failureCode`), 400/404/409 para requisições inválidas ou conflitantes (corpo `application/problem+json`), 503 para indisponibilidade (pode reenviar com a mesma key). Detalhes em [ARCHITECTURE.md](ARCHITECTURE.md#api-http).
+Status: 200 processada, 202 aguardando referência, 422 rejeitada (com `failureCode`), 400/404/409 para requisições inválidas ou conflitantes (corpo `application/problem+json`; abrir de novo uma wallet que já existe devolve 409 com o `walletId` dela), 503 para indisponibilidade (pode reenviar com a mesma key). Detalhes em [ARCHITECTURE.md](ARCHITECTURE.md#api-http).
 
 ## Mandar uma operação pela fila
 

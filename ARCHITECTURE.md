@@ -232,7 +232,7 @@ Nada disso cobre indisponibilidade (503, nada gravado) nem conflitos de chave (4
 
 | Endpoint | Sucesso | Erros |
 |---|---|---|
-| `POST /wallets` | 201 `{id, playerId, balance, version, createdAt}` | 400, 409 `WALLET_ALREADY_EXISTS`, 503 |
+| `POST /wallets` | 201 `{id, playerId, balance, version, createdAt}` | 400, 409 `WALLET_ALREADY_EXISTS` (com o `walletId` da wallet existente), 503 |
 | `GET /wallets/:walletId` | 200 | 400, 404, 503 |
 | `GET /wallets/:walletId/ledger?cursor&limit` | 200 `{items, nextCursor}`, do lançamento mais novo para o mais antigo; `limit` de 1 a 100 (padrão 50); cursor base64url amarrado à wallet | 400 (`INVALID_REQUEST`, `INVALID_CURSOR`), 404, 503 |
 | `GET /wagering/transactions/:id` e `GET /providers/:providerId/wagering/transactions/:externalTransactionId` | 200 | 400, 404 `TRANSACTION_NOT_FOUND`, 503 |
@@ -250,7 +250,7 @@ Nada disso cobre indisponibilidade (503, nada gravado) nem conflitos de chave (4
 | `SERVICE_UNAVAILABLE` (com `Retry-After: 1`) | 503 | sim |
 | `INTERNAL_ERROR` | 500 | sim (nada foi confirmado; reenviar com a mesma key é seguro) |
 
-Um único filtro global aplica essa tabela em todos os endpoints. Erros de validação listam o caminho e a mensagem de cada campo, nunca o valor recebido.
+Um único filtro global aplica essa tabela em todos os endpoints. Erros de validação listam o caminho e a mensagem de cada campo, nunca o valor recebido. O 409 `WALLET_ALREADY_EXISTS` traz o membro de extensão `walletId`, com o id da wallet que já existe para aquele player e moeda, para o cliente repetir a criação com segurança.
 
 - **Validação:** schemas Zod via Standard Schema, com objetos estritos (campo desconhecido → 400) e valores com exatamente duas casas e no máximo 17 dígitos inteiros.
 - **Idempotência:** header `Idempotency-Key` obrigatório no `POST /wagering/transactions`.
@@ -297,8 +297,9 @@ Nenhum evento é publicado antes do commit da transação financeira (ele só ex
 | `WagerTransactionRejected` | REJECTED, inclusive por tentativas esgotadas | `walletId` | identificadores, `kind`, `money`, `failureCode`, `balance` (inalterado) |
 | `WalletBalanceChanged` | junto com cada lançamento no ledger | `walletId` | `walletId`, `transactionId`, `direction`, `money`, `balanceBefore`, `balanceAfter`, `walletVersion` |
 | `WagerTransactionPendingReference` | na primeira vez que a transação fica pendente | `walletId` | identificadores, `kind`, `money`, `referenceExternalTransactionId`, `nextAttemptAt` |
+| `WagerTransactionFailed` | quando uma pendente vira FAILED (`PROCESSING_FAILED`) | `walletId` | identificadores, `kind`, `money`, `failureCode`, `balance` (o observado ao gravar a transação) |
 
-Envelope: `eventId` (UUIDv7), `eventType`, `aggregateId`, `correlationId`, `causationId`, `occurredAt`, `version` (1). Replays e entregas duplicadas não geram eventos. FAILED não gera evento (o `WagerTransactionFailed` é opcional da Etapa 13).
+Envelope: `eventId` (UUIDv7), `eventType`, `aggregateId`, `correlationId`, `causationId`, `occurredAt`, `version` (1). Replays e entregas duplicadas não geram eventos. Todo desfecho terminal é anunciado: PROCESSED, REJECTED e FAILED.
 
 **Garantia de ordem:** entrega FIFO por wallet na ordem de *publicação*, que pode diferir da ordem de commit quando há vários publishers ou retries; sem ordem global; at-least-once. O consumidor de eventos deve deduplicar por `eventId` (a deduplicação do FIFO dura só 5 minutos) e usar `walletVersion` para detectar lacunas e reordenação em `WalletBalanceChanged`.
 
@@ -309,7 +310,7 @@ Um REFUND, ROLLBACK (ou WIN/LOSS com referência) cuja referência ainda não ex
 - **Seleção sem lock:** o scheduler do worker busca as pendentes vencidas pelo índice parcial de `next_reference_attempt_at`, em lotes de `REFERENCE_SCHEDULER_BATCH_SIZE`. É seguro porque `wallet_id` é imutável (trigger).
 - **Processamento de cada candidata** (`ProcessPendingReference`): lock da wallet → lock da transação → revalidação de status, wallet e vencimento → mesma `SettlementPolicy` do caminho síncrono → commit. Não há `SKIP LOCKED` nas pendentes: travar a pendente antes da wallet inverteria a ordem global. Dois schedulers na mesma candidata se serializam no lock da wallet; o segundo encontra o estado já atualizado e não gera efeito nem evento.
 - **Limites:** depois da primeira verificação (síncrona), o scheduler verifica de novo até `REFERENCE_MAX_ATTEMPTS` (10) vezes, com backoff de 2 s dobrando até 120 s e jitter (de 5 a 10 minutos no total, no padrão). Se a referência ainda faltar na última → REJECTED (`REFERENCE_NOT_FOUND`, ou `REFERENCE_NOT_PROCESSED` se ela existir mas continuar pendente) e `WagerTransactionRejected`.
-- **Falhas:** erro transitório deixa a candidata para a próxima volta sem contar tentativa. Outro erro conta em memória, por transação; na terceira (`REFERENCE_MAX_PROCESSING_FAILURES`), `FailPendingTransaction` grava FAILED `PROCESSING_FAILED` (lock da wallet e depois da transação, saldo observado mantido).
+- **Falhas:** erro transitório deixa a candidata para a próxima volta sem contar tentativa. Outro erro conta em memória, por transação; na terceira (`REFERENCE_MAX_PROCESSING_FAILURES`), `FailPendingTransaction` grava FAILED `PROCESSING_FAILED` e o evento `WagerTransactionFailed` na mesma transação (lock da wallet e depois da transação, saldo observado mantido).
 - **Único escritor:** nenhuma outra rota grava numa pendente. Um replay apenas lê o estado atual.
 
 ## Reconciliação
@@ -364,7 +365,7 @@ Num SIGKILL nada disso roda, e a correção vem do banco: a transação aberta s
 
 ## Provas por teste
 
-A suíte (`bun run test`, 794 testes, cerca de 2 minutos) roda contra PostgreSQL e MiniStack reais e passou 10 vezes seguidas sem falha. Cada teste de integração e de concorrência usa um banco criado para ele e filas com prefixo único, e depois de cada cenário um verificador confere, para cada wallet tocada: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo.
+A suíte (`bun run test`, 799 testes, cerca de 2 minutos) roda contra PostgreSQL e MiniStack reais e passou 10 vezes seguidas sem falha. Cada teste de integração e de concorrência usa um banco criado para ele e filas com prefixo único, e depois de cada cenário um verificador confere, para cada wallet tocada: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo.
 
 | Id | Cenário | Onde |
 |---|---|---|
@@ -422,6 +423,16 @@ Não implementada, por decisão (o enunciado dá 0 pontos e pede um IdP externo,
 - **Três situações diferentes:** `FAILED` só para transação já persistida cujo processamento assíncrono falha repetidamente por erro que não é de negócio nem transitório; indisponibilidade de banco ou fila vira 503 ou backoff, sem gravar nada; mensagem inválida ou conflitante vai para a DLQ, sem virar transação.
 - **`PENDING`** só existe em memória; **`WALLET_NOT_FOUND`** não é persistido (não há wallet para a FK); **OPENING** usa o provedor reservado `internal`.
 - **Escala fixa de 2 casas** vale também na entrada: `10.5` e `10.005` são recusados, nunca arredondados.
+
+## Opcionais (Etapa 13)
+
+| Item | Decisão |
+|---|---|
+| Evento `WagerTransactionFailed` | **entregue**: todo desfecho terminal assíncrono é anunciado |
+| 409 de wallet duplicada com o `walletId` existente | **entregue**: o cliente pode repetir a criação com segurança |
+| Triggers de reforço saldo ⇔ ledger | **descartado nesta entrega.** As garantias que o enunciado exige no schema (unicidade, imutabilidade, não negatividade) já estão lá, e o "saldo = ledger" tem três camadas (lock, versão esperada, `UNIQUE (wallet_id, wallet_version)`), conferidas depois de todo teste. O reforço completo seria uma migration nova com constraint triggers diferidas: no lançamento, `balance_before` igual ao `balance_after` da versão anterior (ou zero na primeira); na wallet, saldo igual ao `balance_after` do lançamento da sua versão. Ele exigiria refazer os fixtures dos testes de schema, que gravam wallets e lançamentos soltos, e o risco sobre uma suíte já verificada não compensava no prazo. |
+| Teste de carga | **fora do escopo**, como combinado; nada aqui depende dele |
+| IdP, double-entry, OpenTelemetry, dashboard | **não**, decididos no plano (ver Autenticação) |
 
 ## Trade-offs e limitações
 
