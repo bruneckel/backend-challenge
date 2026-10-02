@@ -20,7 +20,19 @@ describe('loadConfig', () => {
         publishTimeoutMs: 5000,
       },
       outbox: { batchSize: 10, pollIntervalMs: 500, retryBaseMs: 1000, retryMaxMs: 300000 },
-      worker: { publisherEnabled: true },
+      consumer: {
+        name: 'wager-transactions-consumer',
+        batchSize: 10,
+        waitTimeSeconds: 20,
+        receiveTimeoutMs: 25000,
+        visibilityTimeoutSeconds: 30,
+        heartbeatIntervalMs: 10000,
+        maxAttempts: 8,
+        retryBaseMs: 2000,
+        retryMaxMs: 120000,
+        maxConcurrentGroups: 5,
+      },
+      worker: { publisherEnabled: true, consumerEnabled: true },
     });
   });
 
@@ -49,6 +61,17 @@ describe('loadConfig', () => {
       OUTBOX_RETRY_BASE_MS: '10',
       OUTBOX_RETRY_MAX_MS: '100',
       OUTBOX_PUBLISHER_ENABLED: 'false',
+      CONSUMER_ENABLED: 'false',
+      CONSUMER_NAME: 'consumer-b',
+      CONSUMER_BATCH_SIZE: '4',
+      SQS_RECEIVE_WAIT_SECONDS: '1',
+      SQS_RECEIVE_TIMEOUT_MS: '3000',
+      SQS_VISIBILITY_TIMEOUT_SECONDS: '5',
+      SQS_HEARTBEAT_INTERVAL_MS: '1000',
+      CONSUMER_MAX_ATTEMPTS: '3',
+      CONSUMER_RETRY_BASE_MS: '1000',
+      CONSUMER_RETRY_MAX_MS: '4000',
+      CONSUMER_MAX_CONCURRENT_GROUPS: '2',
     });
 
     expect(config).toEqual({
@@ -68,7 +91,19 @@ describe('loadConfig', () => {
         publishTimeoutMs: 1500,
       },
       outbox: { batchSize: 5, pollIntervalMs: 50, retryBaseMs: 10, retryMaxMs: 100 },
-      worker: { publisherEnabled: false },
+      consumer: {
+        name: 'consumer-b',
+        batchSize: 4,
+        waitTimeSeconds: 1,
+        receiveTimeoutMs: 3000,
+        visibilityTimeoutSeconds: 5,
+        heartbeatIntervalMs: 1000,
+        maxAttempts: 3,
+        retryBaseMs: 1000,
+        retryMaxMs: 4000,
+        maxConcurrentGroups: 2,
+      },
+      worker: { publisherEnabled: false, consumerEnabled: false },
     });
   });
 
@@ -76,6 +111,9 @@ describe('loadConfig', () => {
     ['a queue name without the .fifo suffix', { SQS_EVENTS_QUEUE: 'events' }, /SQS_EVENTS_QUEUE/],
     ['an outbox batch above the SQS limit of ten', { OUTBOX_BATCH_SIZE: '11' }, /OUTBOX_BATCH_SIZE/],
     ['a switch that is not a boolean', { OUTBOX_PUBLISHER_ENABLED: 'yes' }, /OUTBOX_PUBLISHER_ENABLED/],
+    ['a long poll longer than twenty seconds', { SQS_RECEIVE_WAIT_SECONDS: '21' }, /SQS_RECEIVE_WAIT_SECONDS/],
+    ['a read timeout that does not outlast the long poll', { SQS_RECEIVE_TIMEOUT_MS: '20000' }, /SQS_RECEIVE_TIMEOUT_MS/],
+    ['a heartbeat slower than the visibility timeout', { SQS_HEARTBEAT_INTERVAL_MS: '30000' }, /SQS_HEARTBEAT_INTERVAL_MS/],
   ])('refuses %s', (_, environment, message) => {
     expect(() => loadConfig(environment)).toThrow(message);
   });

@@ -32,8 +32,21 @@ export interface AppConfig {
     retryBaseMs: number;
     retryMaxMs: number;
   };
+  consumer: {
+    name: string;
+    batchSize: number;
+    waitTimeSeconds: number;
+    receiveTimeoutMs: number;
+    visibilityTimeoutSeconds: number;
+    heartbeatIntervalMs: number;
+    maxAttempts: number;
+    retryBaseMs: number;
+    retryMaxMs: number;
+    maxConcurrentGroups: number;
+  };
   worker: {
     publisherEnabled: boolean;
+    consumerEnabled: boolean;
   };
 }
 
@@ -84,6 +97,17 @@ const environmentSchema = z
     OUTBOX_RETRY_BASE_MS: integer(1000, 1),
     OUTBOX_RETRY_MAX_MS: integer(300_000, 1),
     OUTBOX_PUBLISHER_ENABLED: toggle(true),
+    CONSUMER_ENABLED: toggle(true),
+    CONSUMER_NAME: z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/, 'must be 1 to 128 safe characters').default('wager-transactions-consumer'),
+    CONSUMER_BATCH_SIZE: integer(10, 1, 10),
+    SQS_RECEIVE_WAIT_SECONDS: integer(20, 0, 20),
+    SQS_RECEIVE_TIMEOUT_MS: integer(25_000, 1),
+    SQS_VISIBILITY_TIMEOUT_SECONDS: integer(30, 1, 43_200),
+    SQS_HEARTBEAT_INTERVAL_MS: integer(10_000, 1),
+    CONSUMER_MAX_ATTEMPTS: integer(8, 1),
+    CONSUMER_RETRY_BASE_MS: integer(2000, 1),
+    CONSUMER_RETRY_MAX_MS: integer(120_000, 1),
+    CONSUMER_MAX_CONCURRENT_GROUPS: integer(5, 1),
   })
   .refine((env) => env.REFERENCE_BACKOFF_MAX_MS >= env.REFERENCE_BACKOFF_BASE_MS, {
     path: ['REFERENCE_BACKOFF_MAX_MS'],
@@ -92,6 +116,18 @@ const environmentSchema = z
   .refine((env) => env.OUTBOX_RETRY_MAX_MS >= env.OUTBOX_RETRY_BASE_MS, {
     path: ['OUTBOX_RETRY_MAX_MS'],
     message: 'must not be lower than OUTBOX_RETRY_BASE_MS',
+  })
+  .refine((env) => env.SQS_RECEIVE_TIMEOUT_MS > env.SQS_RECEIVE_WAIT_SECONDS * 1000, {
+    path: ['SQS_RECEIVE_TIMEOUT_MS'],
+    message: 'must be longer than the long poll (SQS_RECEIVE_WAIT_SECONDS)',
+  })
+  .refine((env) => env.SQS_HEARTBEAT_INTERVAL_MS < env.SQS_VISIBILITY_TIMEOUT_SECONDS * 1000, {
+    path: ['SQS_HEARTBEAT_INTERVAL_MS'],
+    message: 'must be shorter than the visibility timeout (SQS_VISIBILITY_TIMEOUT_SECONDS)',
+  })
+  .refine((env) => env.CONSUMER_RETRY_MAX_MS >= env.CONSUMER_RETRY_BASE_MS, {
+    path: ['CONSUMER_RETRY_MAX_MS'],
+    message: 'must not be lower than CONSUMER_RETRY_BASE_MS',
   });
 
 export function loadConfig(env: Readonly<Record<string, string | undefined>>): AppConfig {
@@ -134,8 +170,21 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
       retryBaseMs: values.OUTBOX_RETRY_BASE_MS,
       retryMaxMs: values.OUTBOX_RETRY_MAX_MS,
     },
+    consumer: {
+      name: values.CONSUMER_NAME,
+      batchSize: values.CONSUMER_BATCH_SIZE,
+      waitTimeSeconds: values.SQS_RECEIVE_WAIT_SECONDS,
+      receiveTimeoutMs: values.SQS_RECEIVE_TIMEOUT_MS,
+      visibilityTimeoutSeconds: values.SQS_VISIBILITY_TIMEOUT_SECONDS,
+      heartbeatIntervalMs: values.SQS_HEARTBEAT_INTERVAL_MS,
+      maxAttempts: values.CONSUMER_MAX_ATTEMPTS,
+      retryBaseMs: values.CONSUMER_RETRY_BASE_MS,
+      retryMaxMs: values.CONSUMER_RETRY_MAX_MS,
+      maxConcurrentGroups: values.CONSUMER_MAX_CONCURRENT_GROUPS,
+    },
     worker: {
       publisherEnabled: values.OUTBOX_PUBLISHER_ENABLED,
+      consumerEnabled: values.CONSUMER_ENABLED,
     },
   };
 }

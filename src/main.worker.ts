@@ -10,7 +10,7 @@ try {
   const app = await createWorkerApplication(config);
   await app.listen(config.port, '0.0.0.0');
   const { port } = app.getHttpServer().address() as AddressInfo;
-  log({ level: 'info', msg: 'worker listening', port, instanceId: config.instanceId, publisher: config.worker.publisherEnabled });
+  log({ level: 'info', msg: 'worker listening', port, instanceId: config.instanceId, publisher: config.worker.publisherEnabled, consumer: config.worker.consumerEnabled });
 } catch (error) {
   log({ level: 'error', msg: 'worker failed to start', error: error instanceof Error ? error.message : String(error) });
   process.exit(1);

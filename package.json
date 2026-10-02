@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "start:api": "bun src/main.api.ts",
+    "start:worker": "bun src/main.worker.ts",
+    "demo:send-message": "bun src/cli/send-demo-message.ts",
     "migrate:up": "bun src/platform/database/migrate.ts up",
     "migrate:down": "bun src/platform/database/migrate.ts down",
     "typecheck": "tsc --noEmit",
