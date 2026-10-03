@@ -11,6 +11,8 @@ x-app: &app
     AWS_REGION: us-east-1
     AWS_ACCESS_KEY_ID: test
     AWS_SECRET_ACCESS_KEY: test
+    AUTH_ISSUER: http://localhost:8080/realms/wagering
+    AUTH_JWKS_URL: http://keycloak:8080/realms/wagering/protocol/openid-connect/certs
     LOG_LEVEL: info
 
 x-ready: &ready
@@ -58,6 +60,32 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0
+    command: ['start-dev', '--import-realm']
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: http://localhost:8080
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: 'true'
+      KC_HEALTH_ENABLED: 'true'
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./keycloak/wagering-realm.json:/opt/keycloak/data/import/wagering-realm.json:ro
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bash',
+          '-c',
+          'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && grep -q UP <&3',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
 
   bootstrap:
     <<: *app

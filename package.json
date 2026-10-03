@@ -19,6 +19,7 @@
     "test:concurrency": "bun test --timeout 60000 test/concurrency",
     "test:spike": "bun test --timeout 60000 test/spike",
     "test:load": "bun test/load/run.ts",
+    "test:e2e": "bun test --timeout 60000 test/e2e",
     "infra:up": "docker compose up -d --wait postgres sqs",
     "infra:down": "docker compose down -v"
   },
