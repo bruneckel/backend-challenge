@@ -1,9 +1,17 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
 import { SendMessageCommand, type SQSClient } from '@aws-sdk/client-sqs';
 import type { INestApplication } from '@nestjs/common';
 import { createWorkerApplication } from '@app/worker-application';
 import { loadConfig } from '@platform/config/app-config';
 import { silentLogger } from '@shared/application/logger';
+import { inconsistentWallets } from '@test/support/invariants';
 import { waitUntil } from '@test/support/async';
 import { commandFor, referencing } from '@test/support/commands';
 import {
@@ -48,6 +56,10 @@ beforeAll(async () => {
   worker = await createWorkerApplication(config, { logger: silentLogger });
   await worker.listen(0, '127.0.0.1');
   baseUrl = (await worker.getUrl()).replace('[::1]', '127.0.0.1');
+});
+
+afterEach(async () => {
+  expect(await inconsistentWallets(harness.database.sql)).toEqual([]);
 });
 
 afterAll(async () => {
