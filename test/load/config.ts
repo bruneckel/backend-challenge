@@ -164,6 +164,25 @@ export const PRESETS: Record<string, PresetScenario[]> = {
       durationSeconds: 60,
     },
   ],
+  retention: [
+    {
+      name: 'retention-on-1x1',
+      seedWallets: 1_000_000,
+      seedEvents: true,
+      wallets: 200_000,
+      rate: 600,
+      durationSeconds: 120,
+    },
+    {
+      name: 'retention-off-1x1',
+      seedWallets: 1_000_000,
+      seedEvents: true,
+      wallets: 200_000,
+      rate: 600,
+      durationSeconds: 120,
+      appEnv: { RETENTION_ENABLED: 'false' },
+    },
+  ],
   baseline: [
     {
       name: 'http-saturation-1x1',
