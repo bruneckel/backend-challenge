@@ -17,6 +17,7 @@ export interface SeedOptions {
 }
 
 const DEFAULT_CHUNK = 100_000;
+const SPREAD_SECONDS = 30 * 86_400;
 
 export function seedTemplateName(spec: SeedSpec): string {
   return `load_seed_${spec.wallets}_${spec.operations}_${spec.hotEntries}_${spec.events ? 'events' : 'plain'}`;
@@ -38,17 +39,20 @@ const integer = (value: number) => {
 function chunkSql(
   from: number,
   to: number,
+  total: number,
   operations: number,
   events: boolean,
 ): string {
   const versions = integer(operations) + 1;
   const finalBalance = versions % 2 === 0 ? '999.00' : '1000.00';
+  const spacing = (SPREAD_SECONDS / Math.max(1, integer(total))).toFixed(6);
   return `
     create temporary table seed_wallets on commit drop as
       select n, uuidv7() as id, uuidv7() as player_id,
-        now() - (n % 30) * interval '1 day' - (n % 86400) * interval '1 second'
+        now() - (${integer(total)} - n) * ${spacing} * interval '1 second'
           - ${versions + 1} * interval '1 minute' as created_at
-      from generate_series(${integer(from)}, ${integer(to)}) as n;
+      from generate_series(${integer(from)}, ${integer(to)}) as n
+      order by n;
 
     insert into wallets (id, player_id, currency, balance_amount, version, created_at, updated_at)
       select id, player_id, 'BRL', ${finalBalance}, ${versions}, created_at,
@@ -59,7 +63,8 @@ function chunkSql(
       select w.n, w.id as wallet_id, w.player_id, s.v,
         uuidv7() as transaction_id, uuidv7() as entry_id,
         w.created_at + s.v * interval '1 minute' as at
-      from seed_wallets w cross join generate_series(1, ${versions}) as s(v);
+      from seed_wallets w cross join generate_series(1, ${versions}) as s(v)
+      order by w.n, s.v;
 
     insert into wager_transactions (
       id, provider_id, external_transaction_id, idempotency_key, payload_hash,
@@ -81,7 +86,8 @@ function chunkSql(
       'BRL', null, 'seed', 'PROCESSED', null, null, at,
       case when v % 2 = 0 then 999.00 else 1000.00 end,
       'BRL', 0, null, at, at
-    from seed_steps;
+    from seed_steps
+    order by n, v;
 
     insert into wallet_ledger_entries (
       id, wallet_id, transaction_id, wallet_version, direction, amount,
@@ -93,14 +99,16 @@ function chunkSql(
       case when v = 1 then 0.00 when v % 2 = 0 then 1000.00 else 999.00 end,
       case when v % 2 = 0 then 999.00 else 1000.00 end,
       at
-    from seed_steps;
+    from seed_steps
+    order by n, v;
 
     insert into inbox_messages (
       consumer_name, message_id, payload_hash, transaction_id, received_at, processed_at)
     select 'wager-transactions-consumer', 'msg-seed-' || n || '-' || v,
       md5(transaction_id::text) || md5(n::text), transaction_id, at, at
     from seed_steps
-    where v > 1 and v % 2 = 1;
+    where v > 1 and v % 2 = 1
+    order by at, n;
     ${
       events
         ? `
@@ -117,7 +125,8 @@ function chunkSql(
           'balanceAfter', jsonb_build_object('amount', case when v % 2 = 0 then '999.00' else '1000.00' end, 'currency', 'BRL'))),
       at, 1, at, at + interval '1 second', null
     from seed_steps
-    cross join (values ('WagerTransactionProcessed'), ('WalletBalanceChanged')) as e(type);`
+    cross join (values ('WagerTransactionProcessed'), ('WalletBalanceChanged')) as e(type)
+    order by at, n, e.type;`
         : ''
     }`;
 }
@@ -149,20 +158,22 @@ export async function ensureSeedTemplate(
     });
     try {
       const started = performance.now();
+      if (spec.hotEntries > 0) {
+        await sql.begin((tx) =>
+          tx.unsafe(chunkSql(0, 0, spec.wallets, spec.hotEntries, spec.events)),
+        );
+        log(`  seeded a hot wallet with ${spec.hotEntries + 1} entries`);
+      }
       for (let from = 1; from <= spec.wallets; from += chunk) {
         const to = Math.min(spec.wallets, from + chunk - 1);
         await sql.begin((tx) =>
-          tx.unsafe(chunkSql(from, to, spec.operations, spec.events)),
+          tx.unsafe(
+            chunkSql(from, to, spec.wallets, spec.operations, spec.events),
+          ),
         );
         log(
           `  seeded ${to} of ${spec.wallets} wallets (${Math.round((performance.now() - started) / 1000)} s)`,
         );
-      }
-      if (spec.hotEntries > 0) {
-        await sql.begin((tx) =>
-          tx.unsafe(chunkSql(0, 0, spec.hotEntries, spec.events)),
-        );
-        log(`  seeded a hot wallet with ${spec.hotEntries + 1} entries`);
       }
       await sql.unsafe('analyze');
       const violations = await inconsistentWallets(sql);

@@ -71,6 +71,19 @@ describe('load seed', () => {
         inbox: 0,
         outbox: 0,
       });
+      const correlations = await sql`
+        select tablename || '.' || attname as "column", correlation
+        from pg_stats
+        where (tablename, attname) in (
+          ('outbox_messages', 'id'),
+          ('inbox_messages', 'received_at'),
+          ('wallet_ledger_entries', 'created_at'))`;
+      expect(correlations).toHaveLength(3);
+      expect(
+        correlations.filter(
+          (row: { correlation: number }) => row.correlation < 0.99,
+        ),
+      ).toEqual([]);
       const [mismatched] = await sql`
         select count(*)::int as count from outbox_messages
         where abs(extract(epoch from uuid_extract_timestamp(id) - occurred_at)) > 1`;
