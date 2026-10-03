@@ -133,7 +133,7 @@ O projeto segue no 1.3.14 enquanto o runtime local estiver nessa versão. O `Doc
 
 A migration `src/platform/database/migrations/migration-20261002120000-create-wagering-schema.ts` é escrita à mão, com `up` e `down`, e roda pelo papel `bootstrap` ou por `bun run migrate:up` / `migrate:down` (sem CLI do ORM). Toda constraint, índice e trigger tem nome explícito, e os testes conferem o SQLSTATE e o nome da constraint violada.
 
-**Mapeamento do Money.** Duas colunas: valor `numeric` e moeda `text` com `CHECK` de três letras maiúsculas. O valor não tem precisão declarada e tem `CHECK (scale(col) = 2)`, sinal e magnitude menor que 10^17. Com `numeric(p,2)` o PostgreSQL arredondaria `10.005` em silêncio antes de qualquer CHECK; sem precisão declarada, a escrita é recusada. Na aplicação, o valor é uma string decimal convertida para `big.js` dentro de `Money`, e volta do driver como string exata.
+**Mapeamento do Money.** Duas colunas: valor `numeric` e moeda `text` com `CHECK` de três letras maiúsculas. O valor não tem precisão declarada e tem `CHECK (scale(col) = 2)`, sinal e magnitude menor que 10^17. Com `numeric(p,2)` o PostgreSQL arredondaria `10.005` em silêncio antes de qualquer CHECK; sem precisão declarada, a escrita é recusada. Na aplicação, o valor é uma string decimal convertida para `big.js` dentro de `Money`, e volta do driver como string exata. O limite também está no domínio: um crédito que levaria o saldo a 10^17 ou mais é rejeitado com `BALANCE_LIMIT_EXCEEDED` antes de chegar ao banco (a migration `20261003140000` acrescentou o código ao `CHECK`).
 
 | Garantia do enunciado | Mecanismo no schema |
 |---|---|
@@ -243,6 +243,7 @@ Estados terminais são imutáveis no domínio (`InvalidTransactionStateError`) e
 | `REFERENCE_NOT_PROCESSED` | referência REJECTED/FAILED, ou ainda pendente quando as tentativas acabam | REJECTED | 422 |
 | `REFERENCE_ALREADY_REVERSED` | a referência já tem uma reversão PROCESSED do mesmo tipo | REJECTED | 422 |
 | `REFERENCE_NOT_FOUND` | a referência não apareceu dentro das tentativas | REJECTED | 422 (replay) |
+| `BALANCE_LIMIT_EXCEEDED` | crédito (WIN, REFUND ou ROLLBACK de débito) que levaria o saldo ao limite de armazenamento, 10^17 | REJECTED | 422 |
 | `PROCESSING_FAILED` | o scheduler falhou repetidamente por erro que não é de negócio nem transitório | FAILED | 500 (replay) |
 
 Nada disso cobre indisponibilidade (503, nada gravado) nem conflitos de chave (409 ou DLQ, nada gravado).
@@ -302,6 +303,7 @@ Fila `wager-transactions.fifo`, mensagem `WagerTransactionRequested` com o mesmo
 - **DLQ manual:** envia para `wager-transactions-dlq.fifo` (retenção de 14 dias) com o corpo e o grupo originais, `MessageDeduplicationId` = MessageId do SQS e atributos `reason`, `originalMessageId`, `sqsMessageId`, `receiveCount`, `instanceId` e `deadLetteredAt`; **só depois do envio confirmado** apaga da origem. Se o envio falha, a mensagem fica na origem em backoff. A redrive policy com `maxReceiveCount` 10 é a rede de segurança contra crash em loop.
 - **Contrato do produtor:** `MessageGroupId = walletId` e `MessageDeduplicationId = messageId`. É otimização: a correção não depende disso, e o teste C4 manda cada mensagem num grupo diferente de propósito.
 - `bun run demo:send-message --wallet <id> --player <id>` publica uma mensagem de exemplo.
+- **Reprocessar a DLQ:** `bun run dlq list` mostra as mensagens visíveis com o motivo, sem consumi-las. `bun run dlq redrive --reason RETRIES_EXHAUSTED` (ou `WALLET_NOT_FOUND`, quando a wallet passa a existir com aquele id, como numa importação que preserva os ids; `--limit`, `--dry-run`) devolve à fila de entrada o mesmo corpo, no mesmo grupo, com novo id de deduplicação e o atributo `redrivenFrom`, e só então apaga da DLQ. Conflitos e mensagens inválidas precisam de correção na própria mensagem e são recusados; mensagens movidas pela redrive policy chegam sem motivo e ficam onde estão. A ordem de cada wallet é preservada: se uma mensagem fica retida, as seguintes da mesma wallet também ficam. Reenviar é seguro porque a inbox deduplica pelo `messageId`.
 
 ## Saída: outbox e publisher
 
@@ -341,7 +343,13 @@ Um REFUND, ROLLBACK (ou WIN/LOSS com referência) cuja referência ainda não ex
 
 ## Reconciliação
 
-`POST /wallets/:walletId/reconciliation` lê numa única instrução SQL (um snapshot) o saldo gravado, a soma dos créditos, a soma dos débitos e o número de lançamentos, e calcula a diferença com o `Money`. Responde 200 com `walletId`, `storedBalance`, `calculatedBalance`, `difference`, `consistent` e `checkedEntries`; um ledger corrompido produz saldo calculado negativo com sinal (`-50.00`), não uma exceção. Divergências **não são corrigidas**: o endpoint só lê, conta `wallet_reconciliations_total{result}` e `wallet_reconciliation_divergences_total` e registra um log de alerta com `walletId` e o número de lançamentos (sem valores).
+`POST /wallets/:walletId/reconciliation` lê numa única instrução SQL (um snapshot) o saldo e a versão gravados, a soma dos créditos e dos débitos, o número de lançamentos, a primeira e a última versão do ledger e as quebras de cadeia. Uma quebra é um lançamento cujo `balance_before` difere do `balance_after` do anterior, ou cuja versão não é a anterior + 1. O cálculo do saldo usa o `Money`.
+
+A resposta traz os seis campos do enunciado (`walletId`, `storedBalance`, `calculatedBalance`, `difference`, `consistent` e `checkedEntries`) e mais dois:
+- `chainBreaks`: quantas quebras de cadeia;
+- `versionConsistent`: se a versão da wallet é a do último lançamento (ou 1 sem lançamentos) e se o primeiro lançamento é a versão 1 ou 2.
+
+`consistent` é o veredito geral: saldo igual ao ledger, nenhuma quebra e versão coerente. Assim, uma cadeia quebrada nunca aparece como consistente só porque as somas fecham. Um ledger corrompido produz saldo calculado negativo com sinal (`-50.00`), não uma exceção. Divergências **não são corrigidas**: o endpoint só lê, conta `wallet_reconciliations_total{result}` e `wallet_reconciliation_divergences_total{kind}` (`balance`, `chain` ou `version`) e registra um log de erro por tipo, com `walletId` e contagens, nunca valores.
 
 ## Observabilidade
 
@@ -356,7 +364,7 @@ Um REFUND, ROLLBACK (ou WIN/LOSS com referência) cuja referência ainda não ex
 | `db_transaction_retries_total` | contador | `sqlstate` (`23505`, `40P01`) |
 | `outbox_publish_retries_total` · `pending_reference_retries_total` | contador | — |
 | `wallet_lock_timeouts_total` · `db_deadlocks_total` · `wallet_version_conflicts_total` | contador | — (o último deve ficar em zero) |
-| `wallet_reconciliations_total` · `wallet_reconciliation_divergences_total` | contador | `result` · — |
+| `wallet_reconciliations_total` · `wallet_reconciliation_divergences_total` | contador | `result` · `kind` (`balance`, `chain`, `version`) |
 | `pending_reference_transactions` · `outbox_pending_events` · `outbox_oldest_pending_age_seconds` · `sqs_dlq_approximate_messages` | gauge, amostrado pelo worker a cada 5 s | — |
 | `wallet_lock_wait_seconds` · `outbox_publish_delay_seconds` | histograma | — |
 | `wager_processing_duration_seconds` | histograma | `channel`, `kind`, `outcome` |
@@ -394,7 +402,7 @@ Num SIGKILL nada disso roda, e a correção vem do banco: a transação aberta s
 
 ## Provas por teste
 
-A suíte (`bun run test`, 990 testes, cerca de 2 minutos) roda contra PostgreSQL e MiniStack reais; a da versão avaliada (799 testes) passou 10 vezes seguidas sem falha. Cada suíte de integração e de concorrência usa um banco criado para ela e filas com prefixo único. **Todo teste que opera o sistema** — pelos casos de uso, pela API HTTP, pelo consumidor, pelo scheduler, pelo publisher ou por processos reais — termina com um verificador que confere, para cada wallet do banco: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo. Só ficam de fora as wallets corrompidas de propósito pelos testes de reconciliação, excluídas pelo nome. Os testes de schema e de repositório montam linhas à mão para exercitar uma constraint ou uma primitiva por vez (por exemplo, um `UPDATE` de saldo sem lançamento), então ficam fora por construção.
+A suíte (`bun run test`, 1.028 testes, cerca de 2,5 minutos) roda contra PostgreSQL e MiniStack reais; a da versão avaliada (799 testes) passou 10 vezes seguidas sem falha. Cada suíte de integração e de concorrência usa um banco criado para ela e filas com prefixo único. **Todo teste que opera o sistema** — pelos casos de uso, pela API HTTP, pelo consumidor, pelo scheduler, pelo publisher ou por processos reais — termina com um verificador que confere, para cada wallet do banco: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo. Só ficam de fora as wallets corrompidas de propósito pelos testes de reconciliação, excluídas pelo nome. Os testes de schema e de repositório montam linhas à mão para exercitar uma constraint ou uma primitiva por vez (por exemplo, um `UPDATE` de saldo sem lançamento), então ficam fora por construção.
 
 | Id | Cenário | Onde |
 |---|---|---|
