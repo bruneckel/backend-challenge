@@ -5,6 +5,7 @@ import {
   GetQueueUrlCommand,
   type SQSClient,
 } from '@aws-sdk/client-sqs';
+import { migrations as registeredMigrations } from '@platform/database/migrations';
 import { type TestDatabase, createTestDatabase } from '@test/support/database';
 import { SQS_SETTINGS, createTestSqsClient } from '@test/support/sqs';
 
@@ -63,7 +64,7 @@ describe('bootstrap', () => {
     expect(result.output).toContain('"msg":"bootstrap complete"');
     const [migrations] = await database.sql`
       select count(*)::int as count from mikro_orm_migrations`;
-    expect(migrations.count).toBe(1);
+    expect(migrations.count).toBe(registeredMigrations.length);
     const { QueueUrl } = await sqs.send(
       new GetQueueUrlCommand({ QueueName: names.SQS_COMMANDS_QUEUE }),
     );
