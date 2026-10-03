@@ -5,6 +5,7 @@ const Decimal = Big();
 Decimal.strict = true;
 
 const ZERO = new Decimal('0');
+const STORAGE_LIMIT = new Decimal('100000000000000000');
 const AMOUNT_PATTERN = /^(0|[1-9]\d*)\.\d{2}$/;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
 
@@ -84,6 +85,10 @@ export class Money {
 
   isNegative(): boolean {
     return this.value.lt(ZERO);
+  }
+
+  isWithinLimit(): boolean {
+    return this.value.lt(STORAGE_LIMIT);
   }
 
   isLessThan(other: Money): boolean {

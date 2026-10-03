@@ -292,6 +292,25 @@ describe('wager command consumer (I6)', () => {
     ).toEqual([]);
   });
 
+  test('acknowledges a credit past the storage limit as a business rejection', async () => {
+    const wallet = await openWalletWith(wagering, '99999999999999990.00');
+    const request = requestFor(wallet, 'WIN', '20.00');
+    await send(request, wallet.id);
+
+    await consumeUntilEmpty(consumer());
+
+    const [transaction] = await harness.database.sql`
+      select status, failure_code from wager_transactions where idempotency_key = ${request.data.idempotencyKey}`;
+    expect(transaction).toEqual({
+      status: 'REJECTED',
+      failure_code: 'BALANCE_LIMIT_EXCEEDED',
+    });
+    expect(await balanceOf(wallet.id)).toBe('99999999999999990.00');
+    expect(
+      await drainQueue(sqs, queues.urls.deadLetter, { idleReceives: 1 }),
+    ).toEqual([]);
+  });
+
   test('retries a transient failure with backoff and dead-letters it once the attempts run out', async () => {
     const wallet = await openWalletWith(wagering, '100.00');
     const impatient = createWagering(

@@ -143,6 +143,25 @@ describe('POST /wagering/transactions', () => {
     });
   });
 
+  test('answers 422 BALANCE_LIMIT_EXCEEDED for a credit past the storage limit, also on replay', async () => {
+    const wallet = await openWallet('99999999999999990.00');
+    const win = submission(wallet, 'WIN', '20.00');
+
+    const response = await submit(win);
+    const replay = await submit(win);
+
+    expect(response.status).toBe(422);
+    expect(response.body).toEqual({
+      transactionId: expect.any(String),
+      status: 'REJECTED',
+      failureCode: 'BALANCE_LIMIT_EXCEEDED',
+      balance: brl('99999999999999990.00'),
+      idempotentReplay: false,
+    });
+    expect(replay.status).toBe(422);
+    expect(replay.body).toEqual({ ...response.body, idempotentReplay: true });
+  });
+
   test('answers 202 with a Location for a REFUND that arrives before its BET', async () => {
     const wallet = await openWallet('100.00');
 

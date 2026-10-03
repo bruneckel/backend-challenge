@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { migrateDown, migrateUp } from '@platform/database/migrator';
+import { migrations } from '@platform/database/migrations';
 import { type TestDatabase, createTestDatabase } from '@test/support/database';
 
 const SCHEMA_TABLES = [
@@ -58,15 +59,15 @@ async function runMigrateCommand(
 
 describe('wagering schema migrations', () => {
   test('apply, revert and apply again on a fresh database', async () => {
-    expect(await migrateUp(database.url)).toHaveLength(1);
+    expect(await migrateUp(database.url)).toHaveLength(migrations.length);
     expect(await schemaTables()).toEqual(SCHEMA_TABLES);
     expect(await schemaFunctions()).toEqual(SCHEMA_FUNCTIONS);
 
-    expect(await migrateDown(database.url)).toHaveLength(1);
+    expect(await migrateDown(database.url)).toHaveLength(migrations.length);
     expect(await schemaTables()).toEqual([]);
     expect(await schemaFunctions()).toEqual([]);
 
-    expect(await migrateUp(database.url)).toHaveLength(1);
+    expect(await migrateUp(database.url)).toHaveLength(migrations.length);
     expect(await schemaTables()).toEqual(SCHEMA_TABLES);
     expect(await schemaFunctions()).toEqual(SCHEMA_FUNCTIONS);
   });

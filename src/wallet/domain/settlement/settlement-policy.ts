@@ -166,6 +166,12 @@ export class SettlementPolicy {
           : FailureCode.InsufficientFunds;
       return this.reject(input, failureCode);
     }
+    if (
+      direction === LedgerDirection.Credit &&
+      !wallet.canCredit(transaction.money)
+    ) {
+      return this.reject(input, FailureCode.BalanceLimitExceeded);
+    }
     const movement = {
       transactionId: transaction.id,
       entryId: input.ledgerEntryId,

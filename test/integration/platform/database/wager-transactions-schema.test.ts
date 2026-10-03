@@ -20,6 +20,7 @@ import {
   transactionRow,
   walletRow,
 } from '@test/support/schema-rows';
+import { FailureCode } from '@wallet/domain/transaction/failure-code';
 
 const NULLABLE_COLUMNS = [
   'reference_external_transaction_id',
@@ -98,6 +99,17 @@ describe('wager_transactions shapes', () => {
       await database.sql`select status, amount::text as amount from wager_transactions where id = ${row.id}`;
     expect(storedRow).toEqual({ status: row.status, amount: row.amount });
   });
+
+  test.each(Object.values(FailureCode))(
+    'accepts the failure code %s the domain knows',
+    async (failureCode) => {
+      await stored(
+        failureCode === FailureCode.ProcessingFailed
+          ? failed
+          : { ...rejected, failure_code: failureCode },
+      );
+    },
+  );
 
   test('accepts the internal OPENING of a wallet', async () => {
     const fresh = await storedWallet();
