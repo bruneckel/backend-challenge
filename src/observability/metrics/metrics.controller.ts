@@ -1,12 +1,13 @@
 import { Controller, Get, Res } from '@nestjs/common';
-import { Public } from '@platform/auth/auth.guard';
+import { RequiresRole } from '@platform/auth/auth.guard';
+import { METRICS_READER } from '@platform/auth/principal';
 import { PrometheusMetrics } from './prometheus-metrics';
 
 interface HeaderWriter {
   setHeader(name: string, value: string): unknown;
 }
 
-@Public()
+@RequiresRole(METRICS_READER)
 @Controller('metrics')
 export class MetricsController {
   constructor(private readonly metrics: PrometheusMetrics) {}

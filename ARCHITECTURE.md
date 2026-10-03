@@ -8,7 +8,9 @@ Invariante central: em qualquer situação, `wallet.balance` é igual ao saldo r
 
 ```mermaid
 flowchart LR
-  provider([Provedor]) -- "POST /wagering/transactions" --> api
+  provider([Provedor]) -- "client_credentials" --> keycloak[Keycloak]
+  provider -- "POST /wagering/transactions + Bearer" --> api
+  api -. "JWKS (cache)" .-> keycloak
   provider -- SendMessage --> commands[(wager-transactions.fifo)]
   commands -- "consumer (long poll)" --> worker
   worker -- "DLQ manual" --> dlq[(wager-transactions-dlq.fifo)]
@@ -23,7 +25,7 @@ flowchart LR
 | Papel | Entrypoint | Responsabilidade |
 |---|---|---|
 | `bootstrap` | `src/main.bootstrap.ts` | aplica as migrations pendentes e cria as três filas FIFO; idempotente; roda uma vez antes dos outros |
-| `api` | `src/main.api.ts` | HTTP (wallets, transações, ledger, reconciliação), health e métricas |
+| `api` | `src/main.api.ts` | HTTP (wallets, transações, ledger, reconciliação), health e métricas; valida o token de toda rota que não é health |
 | `worker` | `src/main.worker.ts` | consumidor da fila de entrada, publisher da outbox e scheduler de referências pendentes, cada um ligado ou desligado por variável de ambiente; health e métricas |
 
 As instâncias se coordenam **só pelo PostgreSQL**: lock de linha na wallet, `FOR UPDATE SKIP LOCKED` na outbox, constraints UNIQUE e o trigger de imutabilidade. Nada em memória é garantia; o FIFO e a deduplicação do SQS são otimizações.
@@ -54,6 +56,8 @@ O ESLint impõe as fronteiras: domínio e aplicação não importam NestJS, Mikr
 | AWS SDK (SQS) | `@aws-sdk/client-sqs` 3.1145.0 | todas as operações usadas pelo consumidor e pelo publisher |
 | Emulador SQS | MiniStack 1.5.20 | ver evidências abaixo |
 | Métricas e logs | `prom-client` 15.1.3, `pino` 10.3.1 | catálogo exposto em `/metrics`; logs JSON |
+| JWT e JWKS | `jose` 6.2.12 | verificador testado contra chaves locais e contra o Keycloak |
+| IdP | Keycloak 26.8.0 (`quay.io/keycloak/keycloak:26.8.0`, `start-dev`) | realm importado no boot; `bun run test:e2e` |
 | Lint e formatação | ESLint 10.11.0 com typescript-eslint 8.71.0; Prettier 3.9.9 | `bun run lint` limpo |
 | Orquestração | Docker 29.8.1, Docker Compose v5.5.1 | stack completa com healthchecks e `--scale worker=3` |
 
@@ -252,13 +256,18 @@ Nada disso cobre indisponibilidade (503, nada gravado) nem conflitos de chave (4
 | `GET /wagering/transactions/:id` e `GET /providers/:providerId/wagering/transactions/:externalTransactionId` | 200 | 400, 404 `TRANSACTION_NOT_FOUND`, 503 |
 | `POST /wagering/transactions` | 200 PROCESSED · 202 PENDING_REFERENCE (com `Location`) · 422 REJECTED · 500 FAILED, sempre com o `TransactionResult` | 400, 404, 409, 503 |
 | `POST /wallets/:walletId/reconciliation` | 200, inclusive com `consistent: false` | 400, 404, 503 |
-| `GET /health/live` · `GET /health/ready` · `GET /metrics` | 200 | `ready`: 503 com o banco ou o SQS fora, e durante o shutdown |
+| `GET /metrics` | 200 | 401, 403 sem o papel `metrics-reader` |
+| `GET /health/live` · `GET /health/ready` | 200, sem token | `ready`: 503 com o banco ou o SQS fora, e durante o shutdown |
+
+Toda rota, menos as de health, responde 401 sem token válido e 403 quando o token não dá acesso (ver [Autenticação e autorização](#autenticação-e-autorização)); a tabela acima lista só os erros próprios de cada rota.
 
 **Regra de corpo.** Se a transação foi persistida, o corpo é o `TransactionResult` `{transactionId, status, balance, failureCode?, idempotentReplay}`. Se nada foi persistido, o corpo é `application/problem+json` (RFC 9457) com `code` estável, `retryable` e `correlationId`:
 
 | `code` | HTTP | `retryable` |
 |---|---|---|
 | `INVALID_PAYLOAD` (corpo), `INVALID_REQUEST` (caminho ou query), `INVALID_CURSOR`, `IDEMPOTENCY_KEY_REQUIRED`, `UNSUPPORTED_KIND`, `REFERENCE_REQUIRED`, `REFERENCE_NOT_ALLOWED`, `INVALID_AMOUNT` | 400 | não |
+| `AUTHENTICATION_REQUIRED` (sem token Bearer), `INVALID_TOKEN` (com `WWW-Authenticate: Bearer realm="wagering"`, e `error="invalid_token"` no segundo) | 401 | não |
+| `ACCESS_DENIED` | 403 | não |
 | `WALLET_NOT_FOUND`, `TRANSACTION_NOT_FOUND`, `NOT_FOUND` | 404 | não |
 | `WALLET_ALREADY_EXISTS`, `IDEMPOTENCY_KEY_CONFLICT`, `EXTERNAL_TRANSACTION_CONFLICT` | 409 | não |
 | `SERVICE_UNAVAILABLE` (com `Retry-After: 1`) | 503 | sim |
@@ -334,7 +343,7 @@ Um REFUND, ROLLBACK (ou WIN/LOSS com referência) cuja referência ainda não ex
 
 ## Observabilidade
 
-**Métricas** (`GET /metrics` na api e no worker, formato Prometheus, rótulos padrão `role` e `instance`). Os contadores são registrados depois do commit, então rollbacks e retries não os inflam.
+**Métricas** (`GET /metrics` na api e no worker, formato Prometheus, rótulos padrão `role` e `instance`; exige um token com o papel `metrics-reader`, que o Prometheus obtém sozinho com `oauth2` `client_credentials` no `scrape_config`). Os contadores são registrados depois do commit, então rollbacks e retries não os inflam.
 
 | Métrica | Tipo | Rótulos |
 |---|---|---|
@@ -361,7 +370,7 @@ Famílias exigidas pelo enunciado: transações por status (`wager_transactions_
 
 **Bootstrap.** Aplica as migrations pendentes, cria a DLQ (retenção de 14 dias), a fila de entrada (visibility de `SQS_VISIBILITY_TIMEOUT_SECONDS` e redrive para a DLQ com `maxReceiveCount` 10) e a fila de eventos, e registra `bootstrap complete`. Uma segunda execução não aplica nada e não muda nada.
 
-**Compose.** `postgres` e `sqs` com healthcheck; `bootstrap` roda uma vez depois deles; `api` (porta 3000) e `worker` (sem porta publicada, escalável com `--scale worker=3`) esperam `service_completed_successfully` do bootstrap. Os três papéis usam a mesma imagem, com o processo iniciado direto pelo Bun (forma exec), usuário sem privilégio, `init: true`, `stop_grace_period: 30s` e healthcheck em `/health/ready`. O `INSTANCE_ID` padrão é `hostname-pid`, único por réplica.
+**Compose.** `postgres`, `sqs` e `keycloak` com healthcheck (o do Keycloak, na porta de gerenciamento 9000); `bootstrap` roda uma vez depois deles; `api` (porta 3000) e `worker` (sem porta publicada, escalável com `--scale worker=3`) esperam `service_completed_successfully` do bootstrap. Os três papéis usam a mesma imagem, com o processo iniciado direto pelo Bun (forma exec), usuário sem privilégio, `init: true`, `stop_grace_period: 30s` e healthcheck em `/health/ready`. O `INSTANCE_ID` padrão é `hostname-pid`, único por réplica.
 
 **SIGTERM** (`enableShutdownHooks`):
 
@@ -382,7 +391,7 @@ Num SIGKILL nada disso roda, e a correção vem do banco: a transação aberta s
 
 ## Provas por teste
 
-A suíte (`bun run test`, 799 testes, cerca de 2 minutos) roda contra PostgreSQL e MiniStack reais e passou 10 vezes seguidas sem falha. Cada suíte de integração e de concorrência usa um banco criado para ela e filas com prefixo único. **Todo teste que opera o sistema** — pelos casos de uso, pela API HTTP, pelo consumidor, pelo scheduler, pelo publisher ou por processos reais — termina com um verificador que confere, para cada wallet do banco: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo. Só ficam de fora as wallets corrompidas de propósito pelos testes de reconciliação, excluídas pelo nome. Os testes de schema e de repositório montam linhas à mão para exercitar uma constraint ou uma primitiva por vez (por exemplo, um `UPDATE` de saldo sem lançamento), então ficam fora por construção.
+A suíte (`bun run test`, 921 testes, cerca de 2 minutos) roda contra PostgreSQL e MiniStack reais; a da versão avaliada (799 testes) passou 10 vezes seguidas sem falha. Cada suíte de integração e de concorrência usa um banco criado para ela e filas com prefixo único. **Todo teste que opera o sistema** — pelos casos de uso, pela API HTTP, pelo consumidor, pelo scheduler, pelo publisher ou por processos reais — termina com um verificador que confere, para cada wallet do banco: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo. Só ficam de fora as wallets corrompidas de propósito pelos testes de reconciliação, excluídas pelo nome. Os testes de schema e de repositório montam linhas à mão para exercitar uma constraint ou uma primitiva por vez (por exemplo, um `UPDATE` de saldo sem lançamento), então ficam fora por construção.
 
 | Id | Cenário | Onde |
 |---|---|---|
@@ -428,9 +437,52 @@ A suíte (`bun run test`, 799 testes, cerca de 2 minutos) roda contra PostgreSQL
 | processo caindo no meio | atomicidade da transação | visibility + heartbeat; outbox sem commit volta a pendente | matriz, C8 |
 | nenhum lock global | lock por wallet | uma wallet por unidade de trabalho | C3 |
 
-## Autenticação
+## Autenticação e autorização
 
-Não implementada, por decisão (o enunciado dá 0 pontos e pede um IdP externo, nunca autenticação artesanal). Existe um `AuthGuard` global no-op, `@Public()` nos endpoints de health e métricas e o `ProviderIdentityPort` (`authenticate`, `assertMayActFor`) como ponto de extensão: com um IdP (Keycloak, por exemplo), o guard validaria o JWT pelo JWKS e o port confirmaria que o `providerId` do corpo pertence ao cliente autenticado. O no-op não é apresentado como segurança.
+Entregue depois da versão avaliada do desafio (tag `desafio-v1`, que tinha só o ponto de extensão no-op). O IdP é o **Keycloak 26.8.0**, no Compose, com o realm `wagering` importado de [keycloak/wagering-realm.json](keycloak/wagering-realm.json). Todos os clientes são sistemas (provedores, back office, Prometheus), então todos usam `client_credentials`; o serviço não guarda usuário nem senha.
+
+**Contrato do token** (montado pelos mappers de cada cliente do realm):
+
+| Claim | Valor |
+|---|---|
+| `iss` | `http://localhost:8080/realms/wagering` em qualquer endereço usado para pedir o token (`KC_HOSTNAME` fixo); a api busca as chaves pela rede interna, em `http://keycloak:8080` |
+| `aud` | contém `wagering-api` (mapper de audiência) |
+| `exp` | obrigatório; tokens de 5 minutos |
+| `sub` | a conta de serviço do cliente |
+| `provider_id` | só nos clientes de provedor (`provider-a`, `provider-b`), fixo por cliente |
+| `roles` | papéis do realm: `operator` (back office) e `metrics-reader` (Prometheus) |
+
+**Validação** (`JwtTokenVerifier`, com `jose`): assinatura RS256 pela chave do JWKS com o `kid` do token (outros algoritmos, inclusive `none` e HS256, são recusados); `iss` e `aud` conferidos; `exp` obrigatório e `nbf` respeitado, com tolerância de relógio de 5 s; `sub` obrigatório; `provider_id` e `roles` com tipo errado invalidam o token. Um token recusado vira 401 `INVALID_TOKEN`; a falta do header Bearer, 401 `AUTHENTICATION_REQUIRED`.
+
+**JWKS.** As chaves ficam em cache por até 10 minutos. Um `kid` desconhecido dispara uma nova busca, no máximo uma a cada 30 s, o que cobre a rotação de chaves do Keycloak. Com o Keycloak fora do ar, os tokens seguem validados pelo cache. Se não há chave em cache, ou se o cache venceu e a busca falha, a resposta é **503 `SERVICE_UNAVAILABLE`, retryable, e não 401**: o problema é do IdP, e o cliente não deve descartar um token válido. O log da api registra `identity provider unavailable` com o motivo. Na prática, uma queda do Keycloak mais longa que a vida do token (5 minutos) já impede os clientes de obter tokens novos, então o cache cobre as quedas curtas. Fora do ambiente local, o JWKS precisa chegar por HTTPS ou por uma rede interna confiável: quem controla essa resposta controla quais tokens a api aceita.
+
+**Autorização** (guard global com `@RequiresRole` e duas checagens nos controllers):
+
+| Rota | Exige |
+|---|---|
+| `/health/live`, `/health/ready` | nada (o enunciado pede health aberto) |
+| `/metrics` (api e worker) | papel `metrics-reader` |
+| `POST /wallets`, `GET /wallets/:id`, `GET /wallets/:id/ledger`, `POST /wallets/:id/reconciliation` | papel `operator` |
+| `POST /wagering/transactions` | `provider_id` do token igual ao `providerId` do corpo; o operador, que não é provedor, recebe 403 |
+| `GET /wagering/transactions/:id` | ser o provedor da transação ou `operator`; para outro provedor a resposta é 404, como se ela não existisse |
+| `GET /providers/:providerId/wagering/transactions/:externalTransactionId` | `provider_id` igual ao do caminho, ou `operator` |
+
+A autenticação roda antes de tudo: antes da validação do corpo, da `Idempotency-Key` e de qualquer acesso ao banco. A checagem do provedor vem depois da validação do corpo e antes do caso de uso, então uma operação negada não grava nada.
+
+**Por que este modelo de autorização.** No modelo *seamless wallet*, a wallet é do jogador no operador, e os provedores (estúdios de jogos) debitam e creditam essa mesma wallet. Por isso qualquer provedor autenticado opera qualquer wallet, mas só em nome próprio: o `provider_id` do token precisa ser o `providerId` da operação, que também compõe a idempotência e a unicidade `(provider_id, external_transaction_id)`. Abrir wallets, ler saldo e ledger e reconciliar são funções do operador; o provedor recebe o saldo na resposta de cada transação. O schema não tem vínculo provedor ⇔ wallet; criá-lo seria o próximo passo se o produto quiser restringir quais provedores atendem quais jogadores.
+
+**Fila.** Continua um canal interno confiável, como pede o enunciado: quem publica em `wager-transactions.fifo` é controlado pela IAM da AWS, não por token, e o `providerId` da mensagem segue sujeito às validações de domínio.
+
+**Testes.** A suíte principal assina tokens com uma chave RSA gerada no próprio processo e serve o JWKS num servidor local ([test/support/identity.ts](test/support/identity.ts)), então não depende do Keycloak.
+
+- **Verificador:** token válido de provedor e de operador; audiência em lista; expiração dentro da tolerância; 15 formas de token inválido (expirado, `nbf` no futuro, outro emissor, outra audiência, sem `exp`, sem `sub`, chave desconhecida, assinatura forjada sob um `kid` conhecido, `none`, HS256, malformado, `provider_id` e `roles` com tipo errado); rotação de chave; JWKS fora do ar com e sem cache; timeout.
+- **Matriz 401:** toda rota protegida sem token e com token expirado; outro esquema; credencial malformada; autenticação antes da validação; nada gravado.
+- **Matriz 403:** provedor nas rotas de operador; provedor agindo por outro, sem gravar nada; operador enviando transação; transação de outro provedor como 404; métricas só com `metrics-reader`.
+- **Realm real:** `bun run test:e2e` confere com tokens emitidos pelo Keycloak (precisa de `docker compose up -d --wait keycloak`): operador abre wallet e provedor aposta; `provider_id` amarrado ao cliente; métricas só para o scraper; token adulterado recusado.
+
+**Custo medido:** cerca de 40 µs de CPU por requisição na api, ou 3 a 5% da vazão de um processo saturado (A/B em [LOAD-TEST.md](LOAD-TEST.md#custo-da-autenticação)); a latência fora da saturação não muda.
+
+**Fora desta etapa:** o painel futuro usaria Authorization Code com PKCE e cliente público, com papéis de operação e auditoria separados dos provedores; mTLS entre serviços; escopo da idempotência por provedor (adiado no plano; como a `Idempotency-Key` é global, um provedor consegue saber, pelo 409 `IDEMPOTENCY_KEY_CONFLICT`, que uma key já foi usada por outro, sem ver o resultado nem reaproveitá-lo, porque o corpo dele leva o próprio `providerId`); revogação imediata (o token vale 5 minutos; revogar uma chave é removê-la do JWKS, e o cache a abandona em até 10 minutos).
 
 ## Interpretações do enunciado
 
@@ -448,8 +500,9 @@ Não implementada, por decisão (o enunciado dá 0 pontos e pede um IdP externo,
 | Evento `WagerTransactionFailed` | **entregue**: todo desfecho terminal assíncrono é anunciado |
 | 409 de wallet duplicada com o `walletId` existente | **entregue**: o cliente pode repetir a criação com segurança |
 | Triggers de reforço saldo ⇔ ledger | **descartado nesta entrega.** As garantias que o enunciado exige no schema (unicidade, imutabilidade, não negatividade) já estão lá, e o "saldo = ledger" tem três camadas (lock, versão esperada, `UNIQUE (wallet_id, wallet_version)`), conferidas depois de todo teste. O reforço completo seria uma migration nova com constraint triggers diferidas: no lançamento, `balance_before` igual ao `balance_after` da versão anterior (ou zero na primeira); na wallet, saldo igual ao `balance_after` do lançamento da sua versão. Ele exigiria refazer os fixtures dos testes de schema, que gravam wallets e lançamentos soltos, e o risco sobre uma suíte já verificada não compensava no prazo. |
-| Teste de carga | **fora do escopo**, como combinado; nada aqui depende dele |
-| IdP, double-entry, OpenTelemetry, dashboard | **não**, decididos no plano (ver Autenticação) |
+| Teste de carga | fora da versão avaliada; entregue depois, em [LOAD-TEST.md](LOAD-TEST.md) |
+| IdP | fora da versão avaliada; entregue depois com Keycloak (ver [Autenticação e autorização](#autenticação-e-autorização)) |
+| Double-entry, OpenTelemetry, dashboard | **não**, decididos no plano |
 
 ## Trade-offs e limitações
 
@@ -458,7 +511,7 @@ Não implementada, por decisão (o enunciado dá 0 pontos e pede um IdP externo,
 - **Ordem dos eventos** é a de publicação, não a de commit; o consumidor usa `eventId` e `walletVersion`.
 - **Uma wallet muito disputada** serializa no lock da linha: a vazão por wallet é limitada pela duração da transação (curta, sem I/O externo); `lock_timeout` de 3 s vira 503 ou backoff.
 - **Várias instâncias da api** são demonstradas pelo harness de testes (portas distintas); o Compose não tem load balancer.
-- **Sem autenticação** (ver acima) e sem teste de carga: o foco foi a correção sob concorrência e falhas.
+- **Disponibilidade amarrada ao Keycloak:** sem ele, nenhum cliente obtém token novo; a api segue validando pelo cache de chaves só enquanto os tokens já emitidos valem.
 - **Bootstrap e mudança de atributos de fila:** `CreateQueue` com atributos diferentes dos existentes é recusado pela AWS; mudar a visibility de uma fila já criada exige `SetQueueAttributes` manual.
 
 ## Peculiaridades do ambiente

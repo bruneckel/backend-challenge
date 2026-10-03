@@ -41,6 +41,7 @@ O relatório (`report.md`), os dados brutos (`results.json`) e os logs de cada p
 - **Infraestrutura própria:** projeto Compose `wagering-load`, com PostgreSQL na porta 25432 e MiniStack na 24566 (`test/load/compose.load.yml`). Ela é removida no fim (`down -v`), salvo com `--keep-infra`. Nada toca o banco nem as filas de desenvolvimento ou dos testes.
 - **Estado novo por cenário:** um banco `load_<id>` migrado do zero e três filas FIFO com prefixo próprio.
 - **Processos reais:** `api` e `worker` são iniciados pelo Bun, como em produção. Cada um tem porta própria e grava o log em arquivo, para não sobrecarregar o gerador.
+- **Identidade:** o harness sobe um IdP local (chave RSA gerada no processo e JWKS servido por HTTP) e aponta os processos para ele, como a suíte de testes; o Keycloak não participa. Cada provedor usa um token assinado uma vez e reaproveitado, como um cliente real faria até o token vencer.
 - **Dados sintéticos:** as wallets são abertas pela API (saldo inicial 1.000.000,00). As operações são BET e WIN de 1,00, sorteadas meio a meio, para o saldo não acabar; usam `operationFor`, o mesmo construtor dos testes.
 
 ## Perfis
@@ -102,9 +103,25 @@ Consequências:
 | Lote de operações financeiras de várias wallets numa transação | — | descartada: acoplaria falhas e exigiria ordenar locks entre wallets |
 | Autovacuum ajustado só para `outbox_messages` e retenção das publicadas | causa confirmada acima; o efeito na drenagem ainda não foi medido | a medir na Etapa 4 (A/B da drenagem após saturação) |
 
+### Custo da autenticação
+
+A/B no cenário `http-saturation-1x1` (1 api, 1 worker, degraus de 16, 32 e 64 clientes, 15 s cada), três rodadas alternadas: sem autenticação (`d785358`) contra a validação de token da Etapa 2 (JWT RS256 conferido a cada requisição, contra o JWKS de um IdP local). Vazão em requisições bem-sucedidas por segundo, média das três rodadas:
+
+| Clientes | Sem token | Com token | Diferença | p99 sem → com (ms) |
+|---|---|---|---|---|
+| 16 | 1.386 | 1.343 | −3,1% | 18,5 → 18,7 |
+| 32 | 1.377 | 1.326 | −3,7% | 32,7 → 37,9 |
+| 64 | 1.414 | 1.342 | −5,1% | 60,8 → 61,3 |
+
+- **Pico de cada execução:** 1.406 a 1.432 sem token, 1.327 a 1.373 com token (−5,2% na média); as faixas não se sobrepõem.
+- **Custo por requisição:** cerca de 40 µs no processo da api, que é limitado por CPU: no pico, cada requisição passa de ~706 µs para ~745 µs do processo, gastos na verificação da assinatura RS256 e dos claims.
+- **Latência fora da saturação:** inalterada; 40 µs somem diante dos milissegundos de uma transação. O p99 maior com 32 clientes vem de uma única rodada (48 ms; as outras duas ficaram em 33 ms).
+- **Sem erro e sem violação** em nenhuma das seis execuções; o gerador ficou em 19% de um núcleo nos dois lados, porque cada provedor reaproveita o mesmo token.
+- **Decisão:** custo aceito. Um cache dos tokens já verificados (pelo texto do token, até o `exp`) eliminaria quase todo ele, mas é mais um cache para proteger; fica para quando a CPU da api for o gargalo em produção, depois do primeiro recurso, que é escalar a api horizontalmente.
+
 ## Baseline
 
-Execução `bun run test:load --preset baseline` de 2026-10-03, no commit `f3c7602` (com a gravação do lote da outbox num único `UPDATE`). Os dados completos ficam no relatório gerado. Latências em ms; vazão em operações bem-sucedidas por segundo. Em saturação, a linha mostra o degrau de maior vazão; em SQS, a latência vai do envio ao processamento.
+Execução `bun run test:load --preset baseline` de 2026-10-03, no commit `f3c7602` (com a gravação do lote da outbox num único `UPDATE`), antes da autenticação; o custo dela está medido em "Custo da autenticação". Os dados completos ficam no relatório gerado. Latências em ms; vazão em operações bem-sucedidas por segundo. Em saturação, a linha mostra o degrau de maior vazão; em SQS, a latência vai do envio ao processamento.
 
 | Cenário | Perfil | api/worker | Wallets (quente) | Vazão/s | p50 | p95 | p99 | Erros | Consistência |
 |---|---|---|---|---|---|---|---|---|---|

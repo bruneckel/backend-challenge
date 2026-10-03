@@ -9,6 +9,7 @@ import {
 import { PinoLogger } from '@observability/logger/pino-logger';
 import { inconsistentWallets } from '@test/support/invariants';
 import { type ApiHarness, startApi } from '@test/support/api';
+import { METRICS_READER, bearerFor } from '@test/support/identity';
 
 let api: ApiHarness;
 const corruptedOnPurpose: string[] = [];
@@ -75,7 +76,9 @@ const submit = (
   });
 
 async function metricsText(): Promise<string> {
-  const response = await fetch(`${api.baseUrl}/metrics`);
+  const response = await fetch(`${api.baseUrl}/metrics`, {
+    headers: { authorization: await bearerFor({ roles: [METRICS_READER] }) },
+  });
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')).toContain('text/plain');
   return response.text();

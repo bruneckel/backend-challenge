@@ -15,7 +15,7 @@ export interface HttpProblem {
   title: string;
   retryable: boolean;
   errors?: ProblemFieldError[];
-  headers?: Record<string, string>;
+  headers?: Readonly<Record<string, string>>;
   details?: Readonly<Record<string, string>>;
 }
 
@@ -23,6 +23,7 @@ interface ProblemType {
   status: number;
   title: string;
   retryable: boolean;
+  headers?: Readonly<Record<string, string>>;
 }
 
 const PROBLEM_TYPES: Readonly<Record<string, ProblemType>> = {
@@ -64,6 +65,25 @@ const PROBLEM_TYPES: Readonly<Record<string, ProblemType>> = {
   INVALID_AMOUNT: {
     status: 400,
     title: 'Only LOSS accepts a zero amount',
+    retryable: false,
+  },
+  AUTHENTICATION_REQUIRED: {
+    status: 401,
+    title: 'A bearer token is required',
+    retryable: false,
+    headers: { 'www-authenticate': 'Bearer realm="wagering"' },
+  },
+  INVALID_TOKEN: {
+    status: 401,
+    title: 'The bearer token is not valid',
+    retryable: false,
+    headers: {
+      'www-authenticate': 'Bearer realm="wagering", error="invalid_token"',
+    },
+  },
+  ACCESS_DENIED: {
+    status: 403,
+    title: 'The token does not grant access to this resource',
     retryable: false,
   },
   NOT_FOUND: { status: 404, title: 'Resource not found', retryable: false },
@@ -152,12 +172,14 @@ function problem(
   extra: Pick<HttpProblem, 'errors' | 'headers' | 'details'> = {},
 ): HttpProblem {
   const type = PROBLEM_TYPES[code] ?? PROBLEM_TYPES.INTERNAL_ERROR!;
+  const headers = { ...type.headers, ...extra.headers };
   return {
     status: type.status,
     code: code in PROBLEM_TYPES ? code : 'INTERNAL_ERROR',
     title: type.title,
     retryable: type.retryable,
     ...extra,
+    ...(Object.keys(headers).length === 0 ? {} : { headers }),
   };
 }
 

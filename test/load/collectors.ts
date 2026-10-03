@@ -2,6 +2,7 @@ import {
   DeleteMessageBatchCommand,
   ReceiveMessageCommand,
 } from '@aws-sdk/client-sqs';
+import { METRICS_READER, bearerFor } from '@test/support/identity';
 import { inconsistentWallets } from '@test/support/invariants';
 import { queueDepth } from '@test/support/sqs';
 import type { AppProcess, Storage } from './cluster';
@@ -17,9 +18,13 @@ import type { ConsistencyResult, Quantiles, ServerResult } from './types';
 export async function scrape(
   processes: readonly AppProcess[],
 ): Promise<Sample[]> {
+  const authorization = await bearerFor({ roles: [METRICS_READER] });
   const texts = await Promise.all(
     processes.map((app) =>
-      fetch(`${app.url}/metrics`, { signal: AbortSignal.timeout(5000) })
+      fetch(`${app.url}/metrics`, {
+        headers: { authorization },
+        signal: AbortSignal.timeout(5000),
+      })
         .then((response) => response.text())
         .catch(() => ''),
     ),

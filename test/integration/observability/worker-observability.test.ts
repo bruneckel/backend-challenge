@@ -13,6 +13,11 @@ import { loadConfig } from '@platform/config/app-config';
 import { silentLogger } from '@shared/application/logger';
 import { inconsistentWallets } from '@test/support/invariants';
 import { waitUntil } from '@test/support/async';
+import {
+  METRICS_READER,
+  bearerFor,
+  testIdentity,
+} from '@test/support/identity';
 import { commandFor, referencing } from '@test/support/commands';
 import {
   type PersistenceHarness,
@@ -47,6 +52,7 @@ beforeAll(async () => {
     PORT: '0',
     INSTANCE_ID: 'worker-observed',
     ...queues.environment,
+    ...(await testIdentity()).environment,
     OUTBOX_PUBLISHER_ENABLED: 'false',
     REFERENCE_SCHEDULER_ENABLED: 'false',
     SQS_RECEIVE_WAIT_SECONDS: '1',
@@ -73,7 +79,10 @@ async function metricValue(
   name: string,
   labels: Record<string, string> = {},
 ): Promise<number> {
-  const text = await (await fetch(`${baseUrl}/metrics`)).text();
+  const response = await fetch(`${baseUrl}/metrics`, {
+    headers: { authorization: await bearerFor({ roles: [METRICS_READER] }) },
+  });
+  const text = await response.text();
   const pairs = Object.entries(labels).map(
     ([key, value]) => `${key}="${value}"`,
   );

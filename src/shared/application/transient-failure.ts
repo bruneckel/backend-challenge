@@ -3,7 +3,8 @@ export type TransientReason =
   | 'deadlock'
   | 'serialization_failure'
   | 'statement_timeout'
-  | 'connection';
+  | 'connection'
+  | 'identity_provider';
 
 export class TransientFailure extends Error {
   constructor(

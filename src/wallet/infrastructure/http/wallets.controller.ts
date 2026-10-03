@@ -7,6 +7,8 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { RequiresRole } from '@platform/auth/auth.guard';
+import { OPERATOR } from '@platform/auth/principal';
 import { CorrelationId } from '@platform/http/correlation';
 import type { ReconciliationReport } from '@wallet/application/use-cases/reconcile-wallet';
 import { ReconcileWallet } from '@wallet/application/use-cases/reconcile-wallet';
@@ -29,6 +31,7 @@ export interface LedgerResponse {
   nextCursor: string | null;
 }
 
+@RequiresRole(OPERATOR)
 @Controller('wallets')
 export class WalletsController {
   constructor(

@@ -1,4 +1,5 @@
 import { waitUntil } from './async';
+import { testIdentity } from './identity';
 
 export interface SpawnedProcess {
   readonly name: string;
@@ -87,7 +88,11 @@ export async function startProcess(
     `${entrypoint.split('/').at(-1)}-${Bun.randomUUIDv7()}`;
   const spawned = spawnProcess(
     entrypoint,
-    { INSTANCE_ID: instanceId, ...environment },
+    {
+      INSTANCE_ID: instanceId,
+      ...(await testIdentity()).environment,
+      ...environment,
+    },
     instanceId,
   );
   let exitCode: number | undefined;
