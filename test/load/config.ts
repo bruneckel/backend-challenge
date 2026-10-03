@@ -29,6 +29,7 @@ export interface ScenarioConfig {
   maxP99Ms: number;
   logLevel: string;
   dbPoolSize: number;
+  subscribers: number;
 }
 
 export interface LoadRun {
@@ -63,6 +64,7 @@ export const DEFAULT_SCENARIO: ScenarioConfig = {
   maxP99Ms: 5000,
   logLevel: 'info',
   dbPoolSize: 10,
+  subscribers: 0,
 };
 
 type PresetScenario = Partial<ScenarioConfig> & { name: string };
@@ -102,6 +104,7 @@ export const PRESETS: Record<string, PresetScenario[]> = {
       rate: 30,
       warmupSeconds: 1,
       durationSeconds: 5,
+      subscribers: 20,
     },
     {
       name: 'smoke-http-spike',
@@ -185,6 +188,17 @@ export const PRESETS: Record<string, PresetScenario[]> = {
       durationSeconds: 60,
     },
     {
+      name: 'stream-sustained-3x3',
+      channel: 'mixed',
+      apiInstances: 3,
+      workerInstances: 3,
+      hotShare: 0.2,
+      replayShare: 0.05,
+      rate: 300,
+      durationSeconds: 60,
+      subscribers: 100,
+    },
+    {
       name: 'http-spike-3x3',
       profile: 'spike',
       apiInstances: 3,
@@ -235,6 +249,7 @@ const OPTIONS = {
   'max-p99-ms': { type: 'string' },
   'log-level': { type: 'string' },
   pool: { type: 'string' },
+  subscribers: { type: 'string' },
 } as const;
 
 const NUMERIC_FLAGS: ReadonlyArray<
@@ -259,6 +274,7 @@ const NUMERIC_FLAGS: ReadonlyArray<
   ['max-error-rate', 'maxErrorRate'],
   ['max-p99-ms', 'maxP99Ms'],
   ['pool', 'dbPoolSize'],
+  ['subscribers', 'subscribers'],
 ];
 
 function overridesFrom(
@@ -351,6 +367,19 @@ export function validateScenario(scenario: ScenarioConfig): ScenarioConfig {
     )
   ) {
     throw new Error('concurrencySteps must be positive integers');
+  }
+  if (
+    !Number.isInteger(scenario.subscribers) ||
+    scenario.subscribers < 0 ||
+    scenario.subscribers > scenario.wallets + 1
+  ) {
+    throw new Error('subscribers must be between 0 and wallets + 1');
+  }
+  if (
+    scenario.subscribers > 0 &&
+    (scenario.profile === 'backlog' || scenario.profile === 'publish')
+  ) {
+    throw new Error(`${scenario.profile} does not open streams`);
   }
   if (scenario.profile === 'saturation' && scenario.channel !== 'http') {
     throw new Error('saturation needs the http channel');

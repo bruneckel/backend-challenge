@@ -31,6 +31,13 @@ function verdict(result: ScenarioResult): string {
   if (!drained) {
     return '**não drenou**';
   }
+  const streams = result.streams;
+  if (
+    streams !== undefined &&
+    streams.gaps + streams.repeats + streams.behind + streams.closedEarly > 0
+  ) {
+    return '**stream com falhas**';
+  }
   const missing = outboxEvents - eventsDelivered - eventsQueued;
   if (missing > 0) {
     return `**${missing} eventos não entregues**`;
@@ -141,6 +148,13 @@ function scenarioSection(result: ScenarioResult): string[] {
     const outage = result.outage;
     lines.push(
       `- Queda do PostgreSQL: do segundo ${outage.startSecond} ao ${outage.endSecond}; ${outage.failuresDuringOutage} falhas na janela; primeiro sucesso ${outage.firstSuccessAfterMs === null ? 'não observado' : `${decimal(outage.firstSuccessAfterMs, 0)} ms`} após a volta; vazão normal ${outage.recoveredAfterMs === null ? 'não recuperada na janela' : `${decimal(outage.recoveredAfterMs, 0)} ms`} após a volta.`,
+    );
+  }
+  if (result.streams !== undefined) {
+    const streams = result.streams;
+    lines.push(
+      `- Streams: ${streams.subscribers} assinaturas em ${streams.replicas} réplicas; ${streams.entries} lançamentos entregues; lacunas ${streams.gaps}; repetidos ${streams.repeats}; faltando ao fim ${streams.behind}; encerrados antes do fim ${streams.closedEarly}.`,
+      `- Entrega pelo stream (lançamento → cliente): ${latencyLine(streams.latency)}.`,
     );
   }
   const timeline = result.http?.timeline ?? [];

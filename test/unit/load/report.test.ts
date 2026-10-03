@@ -173,6 +173,52 @@ describe('renderReport', () => {
     );
   });
 
+  test('summarizes the wallet streams of a scenario', () => {
+    const streamed = renderReport(environment, [
+      {
+        ...result,
+        streams: {
+          subscribers: 100,
+          replicas: 3,
+          entries: 5000,
+          latency: summarize([120, 250, 480]),
+          gaps: 0,
+          repeats: 0,
+          behind: 0,
+          closedEarly: 0,
+        },
+      },
+    ]);
+
+    expect(streamed).toContain('| 10 | ok |');
+    expect(streamed).toContain(
+      '- Streams: 100 assinaturas em 3 réplicas; 5000 lançamentos entregues; lacunas 0; repetidos 0; faltando ao fim 0; encerrados antes do fim 0.',
+    );
+    expect(streamed).toContain(
+      '- Entrega pelo stream (lançamento → cliente): 3 amostras;',
+    );
+  });
+
+  test('flags a stream that skipped, repeated or missed entries', () => {
+    const broken = renderReport(environment, [
+      {
+        ...result,
+        streams: {
+          subscribers: 1,
+          replicas: 1,
+          entries: 10,
+          latency: summarize([1]),
+          gaps: 1,
+          repeats: 0,
+          behind: 0,
+          closedEarly: 0,
+        },
+      },
+    ]);
+
+    expect(broken).toContain('| 10 | **stream com falhas** |');
+  });
+
   test('summarizes a publish scenario by the events published per second', () => {
     const publish = renderReport(environment, [
       {

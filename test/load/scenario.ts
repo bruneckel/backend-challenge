@@ -23,6 +23,7 @@ import {
   waitForDrain,
 } from './collectors';
 import type { ScenarioConfig } from './config';
+import { StreamWatch } from './streams';
 import { pauseDatabase, resumeDatabase } from './infra';
 import type { Sample } from './prometheus';
 import {
@@ -383,6 +384,7 @@ export async function runScenario(
     METRICS_SAMPLE_INTERVAL_MS: '1000',
   };
   const processes: AppProcess[] = [];
+  let watch: StreamWatch | undefined;
   try {
     const apis = await Promise.all(
       range(config.apiInstances).map((index) =>
@@ -413,6 +415,13 @@ export async function runScenario(
       processes.push(...workers);
     };
     log(`  ${config.wallets + 1} wallets opened`);
+    if (config.subscribers > 0) {
+      watch = await StreamWatch.open(
+        apis,
+        [hot!, ...wallets].slice(0, config.subscribers).map((item) => item.id),
+      );
+      log(`  ${config.subscribers} wallet streams open`);
+    }
 
     const sampler = new Sampler(() => context.workers, storage);
     let before: Sample[] = [];
@@ -560,6 +569,7 @@ export async function runScenario(
     const cpu = process.cpuUsage(cpuAtStart);
     const wallMs = performance.now() - wallAtStart;
     sampler.stop();
+    const streams = await watch?.settle(storage, 10_000);
     const after = await scrape([...apis, ...context.workers]);
     await sink.catchUp(await outboxEvents(storage), drainTimeoutMs);
     await sink.stop();
@@ -571,6 +581,7 @@ export async function runScenario(
       steps,
       outage,
       publish,
+      streams,
       server: serverResult(before, after, sampler),
       consistency: await consistencyOf(storage, drain, sink),
       generator: {
@@ -578,6 +589,7 @@ export async function runScenario(
       },
     };
   } finally {
+    watch?.close();
     await Promise.allSettled(processes.map((app) => app.stop()));
     await sink.stop();
     await storage.dispose(keepData);
