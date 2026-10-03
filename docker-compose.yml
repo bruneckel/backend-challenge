@@ -115,5 +115,74 @@ services:
       bootstrap:
         condition: service_completed_successfully
 
+  prometheus:
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    profiles: ['observability']
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=2d
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '-q',
+          '-O',
+          '/dev/null',
+          'http://127.0.0.1:9090/-/ready',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  grafana:
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    profiles: ['observability']
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/wagering.json
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+    ports:
+      - '3001:3000'
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '-q',
+          '-O',
+          '/dev/null',
+          'http://127.0.0.1:3000/api/health',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
 volumes:
   pgdata:
+  prometheus-data:
+  grafana-data:

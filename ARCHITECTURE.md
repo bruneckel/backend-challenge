@@ -381,7 +381,7 @@ A resposta traz os seis campos do enunciado (`walletId`, `storedBalance`, `calcu
 
 ## Observabilidade
 
-**Métricas** (`GET /metrics` na api e no worker, formato Prometheus, rótulos padrão `role` e `instance`; exige um token com o papel `metrics-reader`, que o Prometheus obtém sozinho com `oauth2` `client_credentials` no `scrape_config`). Os contadores são registrados depois do commit, então rollbacks e retries não os inflam.
+**Métricas** (`GET /metrics` na api e no worker, formato Prometheus, rótulos padrão `role` e `instance`; exige um token com o papel `metrics-reader`, que o Prometheus obtém sozinho com `oauth2` `client_credentials` no `scrape_config`). Os contadores são registrados depois do commit, então rollbacks e retries não os inflam. O profile `observability` do Compose sobe esse Prometheus (`observability/prometheus/prometheus.yml`, com `honor_labels` para manter os rótulos da aplicação) e um Grafana com o painel provisionado. Um teste confere que cada consulta do painel usa uma métrica exportada e que toda métrica exportada tem painel.
 
 | Métrica | Tipo | Rótulos |
 |---|---|---|

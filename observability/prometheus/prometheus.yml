@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: wagering
+    honor_labels: true
+    oauth2:
+      client_id: wagering-metrics
+      client_secret: wagering-metrics-secret
+      token_url: http://keycloak:8080/realms/wagering/protocol/openid-connect/token
+    static_configs:
+      - targets:
+          - api:3000
+          - worker:3000

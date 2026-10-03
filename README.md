@@ -37,6 +37,29 @@ docker compose stop api worker                 # parada graciosa (SIGTERM)
 docker compose down -v                         # remove tudo, inclusive o volume do banco
 ```
 
+### Painel de métricas
+
+```bash
+docker compose --profile observability up -d --build --wait
+```
+
+O profile `observability` soma dois serviços ao Compose:
+
+| Serviço | O que faz |
+|---|---|
+| `prometheus` | Prometheus 3.15.0 em `http://localhost:9090`. Coleta `/metrics` da api e do worker a cada 5 s com um token do client `wagering-metrics`, que ele mesmo pede ao Keycloak (`oauth2`, `client_credentials`). |
+| `grafana` | Grafana 13.2.3 em `http://localhost:3001`. Abre direto no painel **Wagering Processor**, com acesso anônimo de leitura; a administração usa `admin`/`admin`, só para desenvolvimento. |
+
+O painel cobre todas as métricas da aplicação:
+- transações por status, canal e tipo, e a latência de processamento e HTTP;
+- replays e conflitos de idempotência, duplicatas na inbox;
+- retries e DLQ;
+- espera de lock, timeouts, deadlocks e conflitos de versão;
+- outbox pendente, idade e atraso de publicação, e retenção;
+- referências pendentes, streams e reconciliações.
+
+Um teste garante que cada consulta do painel lê uma métrica que a aplicação exporta, e que toda métrica nova ganha um painel. A configuração está em [observability/](observability/).
+
 ## Usar a API
 
 Toda rota, menos `/health/*`, exige um token do Keycloak no header `Authorization: Bearer`. O realm traz quatro clientes `client_credentials`, com segredos só de desenvolvimento:
@@ -173,7 +196,7 @@ Os testes precisam do PostgreSQL e do MiniStack de pé (`bun run infra:up`). Cad
 | `bun run test:integration` | banco, filas, HTTP e casos de uso contra PostgreSQL e MiniStack reais |
 | `bun run test:concurrency` | cenários concorrentes em processo e com vários processos `api` e `worker` (C1 a C9, matriz de shutdown, reinício) |
 | `bun run test:spike` | as verificações que fixaram as versões da stack |
-| `bun run test:e2e` | o realm do Keycloak contra a API: tokens reais, papéis e `provider_id` (precisa de `docker compose up -d --wait keycloak`) |
+| `bun run test:e2e` | o realm do Keycloak contra a API (tokens reais, papéis e `provider_id`) e o profile de métricas (Prometheus coletando api e worker com token do Keycloak, painel servido pelo Grafana); precisa de `docker compose --profile observability up -d --build --wait` |
 | `bun run test:load --preset smoke` | teste de carga em infraestrutura isolada própria; metodologia, presets e baseline em [LOAD-TEST.md](LOAD-TEST.md) |
 | `bun run typecheck` · `bun run lint` · `bun run format` | `tsc --noEmit`; ESLint e Prettier em modo de checagem; formatação |
 
@@ -258,4 +281,5 @@ src/
 test/
   unit/ · integration/ · concurrency/ · e2e/ · spike/ · load/ · support/
 keycloak/         realm importado pelo Compose
+observability/    Prometheus e Grafana do profile observability (configuração e painel)
 ```
