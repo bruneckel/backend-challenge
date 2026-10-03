@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { migrateDown, migrateUp } from '@platform/database/migrator';
 import { migrations } from '@platform/database/migrations';
+import { Migration20261003140000AllowBalanceLimitFailureCode } from '@platform/database/migrations/migration-20261003140000-allow-balance-limit-failure-code';
+import { createOrm } from '@platform/database/orm';
 import { type TestDatabase, createTestDatabase } from '@test/support/database';
 
 const SCHEMA_TABLES = [
@@ -86,6 +88,36 @@ describe('wagering schema migrations', () => {
       where c.relname = 'inbox_messages_received_at'`;
 
     expect(index).toEqual({ valid: true, ready: true });
+  });
+
+  test('replace the failure-code check without validating the table under an exclusive lock', async () => {
+    await migrateUp(database.url);
+    const orm = await createOrm({ databaseUrl: database.url, entities: [] });
+    try {
+      const migration = new Migration20261003140000AllowBalanceLimitFailureCode(
+        orm.em.getDriver(),
+        orm.config,
+      );
+      await migration.up();
+      const statements = migration
+        .getQueries()
+        .map((query) => String(query).replace(/\s+/g, ' ').trim());
+
+      expect(migration.isTransactional()).toBe(false);
+      expect(statements).toHaveLength(2);
+      expect(statements[0]).toStartWith(
+        'alter table wager_transactions drop constraint wager_transactions_failure_code_known, add constraint wager_transactions_failure_code_known check',
+      );
+      expect(statements[0]).toEndWith(' not valid');
+      expect(statements[1]).toBe(
+        'alter table wager_transactions validate constraint wager_transactions_failure_code_known',
+      );
+    } finally {
+      await orm.close(true);
+    }
+    const [constraint] = await database.sql`
+      select convalidated from pg_constraint where conname = 'wager_transactions_failure_code_known'`;
+    expect(constraint).toEqual({ convalidated: true });
   });
 
   test('apply nothing when the schema is already current', async () => {

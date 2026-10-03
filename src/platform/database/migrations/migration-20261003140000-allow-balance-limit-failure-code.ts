@@ -16,22 +16,27 @@ const PREVIOUS_CODES = [
 
 const CURRENT_CODES = [...PREVIOUS_CODES, 'BALANCE_LIMIT_EXCEEDED'];
 
-const knownCodes = (codes: readonly string[]) => `
+const replaceWith = (codes: readonly string[]) => `
   alter table wager_transactions
+    drop constraint wager_transactions_failure_code_known,
     add constraint wager_transactions_failure_code_known
-    check (failure_code in (${codes.map((code) => `'${code}'`).join(', ')}))`;
+    check (failure_code in (${codes.map((code) => `'${code}'`).join(', ')})) not valid`;
 
-const DROP =
-  'alter table wager_transactions drop constraint wager_transactions_failure_code_known';
+const VALIDATE =
+  'alter table wager_transactions validate constraint wager_transactions_failure_code_known';
 
 export class Migration20261003140000AllowBalanceLimitFailureCode extends Migration {
+  override isTransactional(): boolean {
+    return false;
+  }
+
   override async up(): Promise<void> {
-    this.addSql(DROP);
-    this.addSql(knownCodes(CURRENT_CODES));
+    this.addSql(replaceWith(CURRENT_CODES));
+    this.addSql(VALIDATE);
   }
 
   override async down(): Promise<void> {
-    this.addSql(DROP);
-    this.addSql(knownCodes(PREVIOUS_CODES));
+    this.addSql(replaceWith(PREVIOUS_CODES));
+    this.addSql(VALIDATE);
   }
 }
