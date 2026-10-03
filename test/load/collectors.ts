@@ -2,6 +2,8 @@ import {
   DeleteMessageBatchCommand,
   ReceiveMessageCommand,
 } from '@aws-sdk/client-sqs';
+import type { SQL } from 'bun';
+import { uuidV7LowerBound } from '@platform/ids/uuid-v7-bound';
 import { METRICS_READER, bearerFor } from '@test/support/identity';
 import { inconsistentWallets } from '@test/support/invariants';
 import { queueDepth } from '@test/support/sqs';
@@ -201,13 +203,21 @@ export async function publishSpanSeconds(storage: Storage): Promise<number> {
   return Number((row as { seconds: number | null } | undefined)?.seconds ?? 0);
 }
 
-export const outboxEvents = (storage: Storage) =>
-  count(storage, 'select count(*)::int as count from outbox_messages');
+export async function outboxEventsSince(
+  sql: SQL,
+  since: Date,
+): Promise<number> {
+  const [row] = await sql`
+    select count(*)::int as count from outbox_messages
+    where id >= ${uuidV7LowerBound(since)}::uuid`;
+  return (row as { count: number } | undefined)?.count ?? 0;
+}
 
 export async function consistencyOf(
   storage: Storage,
   drain: { drained: boolean; seconds: number },
   sink: EventSink,
+  since: Date,
 ): Promise<ConsistencyResult> {
   const [wallets, violations, dlqDepth, unpublished, pending, events] =
     await Promise.all([
@@ -216,7 +226,7 @@ export async function consistencyOf(
       queueDepth(storage.sqs, storage.queues.deadLetter),
       unpublishedEvents(storage),
       pendingReferences(storage),
-      outboxEvents(storage),
+      outboxEventsSince(storage.sql, since),
     ]);
   return {
     wallets,

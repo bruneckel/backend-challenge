@@ -14,7 +14,7 @@ import {
   EventSink,
   Sampler,
   consistencyOf,
-  outboxEvents,
+  outboxEventsSince,
   processedAt,
   publishSpanSeconds,
   scrape,
@@ -386,6 +386,7 @@ export async function runScenario(
         )
       : undefined;
   const storage = await createStorage(id, template);
+  const startedAt = new Date();
   const sink = new EventSink(storage);
   sink.start();
   const drainTimeoutMs = config.drainTimeoutSeconds * 1000;
@@ -594,7 +595,10 @@ export async function runScenario(
     sampler.stop();
     const streams = await watch?.settle(storage, 10_000);
     const after = await scrape([...apis, ...context.workers]);
-    await sink.catchUp(await outboxEvents(storage), drainTimeoutMs);
+    await sink.catchUp(
+      await outboxEventsSince(storage.sql, startedAt),
+      drainTimeoutMs,
+    );
     await sink.stop();
     return {
       config,
@@ -606,7 +610,7 @@ export async function runScenario(
       publish,
       streams,
       server: serverResult(before, after, sampler),
-      consistency: await consistencyOf(storage, drain, sink),
+      consistency: await consistencyOf(storage, drain, sink, startedAt),
       generator: {
         cpuPercent: ((cpu.user + cpu.system) / 1000 / wallMs) * 100,
       },
