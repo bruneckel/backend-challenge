@@ -9,7 +9,8 @@ export interface StreamingRequest {
 }
 
 export interface StreamingResponse {
-  writeHead(status: number, headers: Record<string, string>): unknown;
+  setHeader(name: string, value: string): unknown;
+  writeHead(status: number): unknown;
   flushHeaders(): void;
   write(chunk: string): boolean;
   end(): unknown;
@@ -25,11 +26,10 @@ export class ResponseSink implements EventSink {
   ) {}
 
   open(): void {
-    this.response.writeHead(200, {
-      'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-cache, no-transform',
-      'x-accel-buffering': 'no',
-    });
+    this.response.setHeader('content-type', 'text/event-stream; charset=utf-8');
+    this.response.setHeader('cache-control', 'no-cache, no-transform');
+    this.response.setHeader('x-accel-buffering', 'no');
+    this.response.writeHead(200);
     this.response.flushHeaders();
   }
 
