@@ -16,6 +16,11 @@ export type DeadLetterReason =
   | 'WALLET_NOT_FOUND'
   | 'RETRIES_EXHAUSTED';
 
+export const REDRIVABLE_REASONS: ReadonlySet<DeadLetterReason> = new Set([
+  'RETRIES_EXHAUSTED',
+  'WALLET_NOT_FOUND',
+]);
+
 export type ConsumerFailure =
   | { type: 'dead_letter'; reason: DeadLetterReason }
   | { type: 'retry'; pauseConsumer: boolean };
