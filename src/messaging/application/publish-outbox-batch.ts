@@ -55,8 +55,8 @@ export class PublishOutboxBatch {
             reasons.get(message.id) ?? UNCONFIRMED,
           );
         }
-        await outbox.save(message);
       }
+      await outbox.saveAll(batch);
       return {
         claimed: batch.length,
         published: publishedCount,

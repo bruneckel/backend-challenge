@@ -110,6 +110,51 @@ describe('MikroOrmOutboxRepository', () => {
     });
   });
 
+  test('saves the outcome of a whole batch in one call', async () => {
+    const published = eventMessage(minutesFromNow(-3));
+    const failed = eventMessage(minutesFromNow(-2));
+    const untouched = eventMessage(minutesFromNow(-1));
+    await enqueue(published, failed, untouched);
+    const backoff = ExponentialBackoff.create({
+      baseMs: 60_000,
+      maxMs: 60_000,
+      random: () => 1,
+    });
+
+    await harness.unitOfWork.run(async ({ outbox }) => {
+      const [first, second] = await outbox.claimDueBatch(NOW, 2);
+      first!.markPublished(NOW);
+      second!.scheduleRetry(NOW, backoff, 'Throttled: slow down');
+      await outbox.saveAll([first!, second!]);
+    });
+
+    expect((await claim(10, NOW)).map((message) => message.id)).toEqual([
+      untouched.id,
+    ]);
+    const later = await claim(10, minutesFromNow(1));
+    expect(later.map((message) => message.id)).toEqual([
+      untouched.id,
+      failed.id,
+    ]);
+    expect(later[1]?.toState()).toMatchObject({
+      attempts: 1,
+      lastError: 'Throttled: slow down',
+      nextAttemptAt: minutesFromNow(1),
+    });
+    const [row] = await harness.database.sql`
+      select published_at from outbox_messages where id = ${published.id}`;
+    expect(row.published_at).toEqual(NOW);
+  });
+
+  test('saves an empty batch without touching anything', async () => {
+    const message = eventMessage(minutesFromNow(-1));
+    await enqueue(message);
+
+    await harness.unitOfWork.run(({ outbox }) => outbox.saveAll([]));
+
+    expect((await claim()).map((claimed) => claimed.id)).toEqual([message.id]);
+  });
+
   test('lets concurrent publishers claim disjoint batches', async () => {
     const messages = [-4, -3, -2, -1].map((minutes) =>
       eventMessage(minutesFromNow(minutes)),
