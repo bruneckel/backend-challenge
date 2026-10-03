@@ -3,7 +3,7 @@ import { createApiApplication } from '@app/api-application';
 import { loadConfig } from '@platform/config/app-config';
 import { type Logger, silentLogger } from '@shared/application/logger';
 import { type TestDatabase, createMigratedDatabase } from './database';
-import { METRICS_READER, OPERATOR, testIdentity } from './identity';
+import { METRICS_READER, OPERATOR, bearerFor, testIdentity } from './identity';
 import { createTestQueues, createTestSqsClient } from './sqs';
 
 export interface ApiResponse {
@@ -52,15 +52,15 @@ async function authorizationFor(
   ) {
     return {};
   }
-  const bearer =
-    token ??
-    (await (
-      await testIdentity()
-    ).token({
-      providerId: providerOf(path, body),
-      roles: [OPERATOR, METRICS_READER],
-    }));
-  return { authorization: `Bearer ${bearer}` };
+  return {
+    authorization:
+      token === undefined
+        ? await bearerFor({
+            providerId: providerOf(path, body),
+            roles: [OPERATOR, METRICS_READER],
+          })
+        : `Bearer ${token}`,
+  };
 }
 
 export async function requestApi(
