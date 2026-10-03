@@ -19,10 +19,11 @@ let tool: DeadLetterRedrive;
 beforeEach(async () => {
   sqs = createTestSqsClient();
   queues = await createTestQueues(sqs);
-  tool = new DeadLetterRedrive(sqs, {
-    deadLetter: queues.urls.deadLetter,
-    commands: queues.urls.commands,
-  });
+  tool = new DeadLetterRedrive(
+    sqs,
+    { deadLetter: queues.urls.deadLetter, commands: queues.urls.commands },
+    { waitSeconds: 0 },
+  );
 });
 
 afterEach(async () => {

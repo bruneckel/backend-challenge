@@ -39,6 +39,11 @@ export interface RedriveReport {
   held: DeadLetterSummary[];
 }
 
+export interface DeadLetterRedriveOptions {
+  holdSeconds?: number;
+  waitSeconds?: number;
+}
+
 export const UNKNOWN_REASON = 'UNKNOWN';
 
 const IDLE_RECEIVES = 2;
@@ -63,11 +68,17 @@ function summaryOf(message: Message): DeadLetterSummary {
 }
 
 export class DeadLetterRedrive {
+  private readonly holdSeconds: number;
+  private readonly waitSeconds: number;
+
   constructor(
     private readonly client: SQSClient,
     private readonly queues: DeadLetterQueues,
-    private readonly holdSeconds = 60,
-  ) {}
+    options: DeadLetterRedriveOptions = {},
+  ) {
+    this.holdSeconds = options.holdSeconds ?? 60;
+    this.waitSeconds = options.waitSeconds ?? 1;
+  }
 
   async list(limit = 100): Promise<DeadLetterListing> {
     const approximateTotal = await this.approximateTotal();
@@ -138,7 +149,7 @@ export class DeadLetterRedrive {
       new ReceiveMessageCommand({
         QueueUrl: this.queues.deadLetter,
         MaxNumberOfMessages: 10,
-        WaitTimeSeconds: 1,
+        WaitTimeSeconds: this.waitSeconds,
         VisibilityTimeout: this.holdSeconds,
         MessageSystemAttributeNames: ['MessageGroupId'],
         MessageAttributeNames: ['All'],
