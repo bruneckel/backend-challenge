@@ -9,7 +9,7 @@ Processador de transações de aposta (BET, WIN, LOSS, REFUND, ROLLBACK) com ent
 
 - Docker com Docker Compose v2 (testado com Docker 29.8.1 e Compose v5.5.1)
 - Bun 1.3.14, para rodar testes, lint e os scripts locais (`curl -fsSL https://bun.sh/install | bash -s bun-v1.3.14`)
-- Portas livres: 3000 (api), 5432 (PostgreSQL) e 4566 (MiniStack, o emulador de SQS)
+- Portas livres: 3000 (api), 5432 (PostgreSQL), 4566 (MiniStack, o emulador de SQS) e 8080 (Keycloak)
 
 ## Subir tudo com Docker Compose
 
@@ -23,11 +23,12 @@ Sobe, nesta ordem:
 |---|---|
 | `postgres` | PostgreSQL 18.6 |
 | `sqs` | MiniStack 1.5.20 (SQS FIFO), sem credenciais |
+| `keycloak` | Keycloak 26.8.0 em `http://localhost:8080`, com o realm `wagering` importado de [keycloak/wagering-realm.json](keycloak/wagering-realm.json) |
 | `bootstrap` | aplica as migrations e cria as filas `wager-transactions.fifo`, `wager-transactions-dlq.fifo` e `wagering-events.fifo`; roda uma vez e termina com código 0 |
 | `api` | HTTP em `http://localhost:3000` |
 | `worker` | consome a fila de entrada, publica os eventos da outbox e resolve referências pendentes |
 
-`--wait` só retorna quando `api` e `worker` estão com `/health/ready` respondendo 200.
+`--wait` só retorna quando `api` e `worker` estão com `/health/ready` respondendo 200 e o Keycloak está pronto.
 
 ```bash
 docker compose up -d --scale worker=3 --wait   # três workers
@@ -38,19 +39,41 @@ docker compose down -v                         # remove tudo, inclusive o volume
 
 ## Usar a API
 
-Abrir uma wallet com saldo inicial:
+Toda rota, menos `/health/*`, exige um token do Keycloak no header `Authorization: Bearer`. O realm traz quatro clientes `client_credentials`, com segredos só de desenvolvimento:
+
+| Cliente | Segredo | O token carrega | Pode |
+|---|---|---|---|
+| `provider-a` · `provider-b` | `provider-a-secret` · `provider-b-secret` | `provider_id` | enviar e consultar as próprias transações |
+| `wagering-operator` | `wagering-operator-secret` | `roles: ["operator"]` | abrir wallets, ver saldo e ledger, reconciliar, consultar qualquer transação |
+| `wagering-metrics` | `wagering-metrics-secret` | `roles: ["metrics-reader"]` | ler `/metrics` |
+
+```bash
+token() {
+  curl -s http://localhost:8080/realms/wagering/protocol/openid-connect/token \
+    -d grant_type=client_credentials -d client_id="$1" -d client_secret="$1-secret" |
+    sed -E 's/.*"access_token":"([^"]+)".*/\1/'
+}
+OPERATOR=$(token wagering-operator)
+PROVIDER=$(token provider-a)
+```
+
+Os tokens valem 5 minutos; depois disso a API responde 401 `INVALID_TOKEN` e basta pedir outro.
+
+Abrir uma wallet com saldo inicial (operador):
 
 ```bash
 curl -s -X POST localhost:3000/wallets \
+  -H "authorization: Bearer $OPERATOR" \
   -H 'content-type: application/json' \
   -d '{"playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1","initialBalance":{"amount":"100.00","currency":"BRL"}}'
 ```
 
-A resposta traz o `id` da wallet. Com ele, uma aposta (o header `Idempotency-Key` é obrigatório; reenviar com a mesma key devolve o mesmo resultado, com `idempotentReplay: true`):
+A resposta traz o `id` da wallet. Com ele, uma aposta do `provider-a` (o header `Idempotency-Key` é obrigatório; reenviar com a mesma key devolve o mesmo resultado, com `idempotentReplay: true`):
 
 ```bash
 WALLET=<id da wallet>
 curl -s -X POST localhost:3000/wagering/transactions \
+  -H "authorization: Bearer $PROVIDER" \
   -H 'content-type: application/json' \
   -H 'Idempotency-Key: provider-a:transaction-123' \
   -d '{
@@ -67,18 +90,19 @@ curl -s -X POST localhost:3000/wagering/transactions \
 
 Resposta: `200 {"transactionId":"…","status":"PROCESSED","balance":{"amount":"75.00","currency":"BRL"},"idempotentReplay":false}`. Um REFUND ou ROLLBACK leva `referenceExternalTransactionId` com o `externalTransactionId` da BET; se a BET ainda não chegou, a resposta é 202 e o worker conclui depois.
 
-| Endpoint | Para quê |
-|---|---|
-| `POST /wallets` | abre uma wallet (uma por player e moeda) |
-| `GET /wallets/:walletId` | saldo e versão |
-| `GET /wallets/:walletId/ledger?limit=50&cursor=…` | lançamentos, do mais novo para o mais antigo |
-| `POST /wagering/transactions` | BET, WIN, LOSS, REFUND, ROLLBACK |
-| `GET /wagering/transactions/:transactionId` | uma transação |
-| `GET /providers/:providerId/wagering/transactions/:externalTransactionId` | uma transação pelo id do provedor |
-| `POST /wallets/:walletId/reconciliation` | compara o saldo com o ledger, sem alterar nada |
-| `GET /health/live` · `GET /health/ready` · `GET /metrics` | saúde e métricas Prometheus (api e worker) |
+| Endpoint | Para quê | Quem pode |
+|---|---|---|
+| `POST /wallets` | abre uma wallet (uma por player e moeda) | operador |
+| `GET /wallets/:walletId` | saldo e versão | operador |
+| `GET /wallets/:walletId/ledger?limit=50&cursor=…` | lançamentos, do mais novo para o mais antigo | operador |
+| `POST /wallets/:walletId/reconciliation` | compara o saldo com o ledger, sem alterar nada | operador |
+| `POST /wagering/transactions` | BET, WIN, LOSS, REFUND, ROLLBACK | o provedor do `providerId` do corpo |
+| `GET /wagering/transactions/:transactionId` | uma transação | o provedor dela ou o operador |
+| `GET /providers/:providerId/wagering/transactions/:externalTransactionId` | uma transação pelo id do provedor | esse provedor ou o operador |
+| `GET /metrics` | métricas Prometheus (api e worker) | leitor de métricas |
+| `GET /health/live` · `GET /health/ready` | saúde (api e worker) | qualquer um, sem token |
 
-Status: 200 processada, 202 aguardando referência, 422 rejeitada (com `failureCode`), 400/404/409 para requisições inválidas ou conflitantes (corpo `application/problem+json`; abrir de novo uma wallet que já existe devolve 409 com o `walletId` dela), 503 para indisponibilidade (pode reenviar com a mesma key). Detalhes em [ARCHITECTURE.md](ARCHITECTURE.md#api-http).
+Status: 200 processada, 202 aguardando referência, 422 rejeitada (com `failureCode`), 400/404/409 para requisições inválidas ou conflitantes (corpo `application/problem+json`; abrir de novo uma wallet que já existe devolve 409 com o `walletId` dela), 401 sem token ou com token inválido, 403 quando o token não dá acesso à rota ou ao `providerId`, 503 para indisponibilidade (pode reenviar com a mesma key). Detalhes em [ARCHITECTURE.md](ARCHITECTURE.md#api-http) e em [Autenticação e autorização](ARCHITECTURE.md#autenticação-e-autorização).
 
 ## Mandar uma operação pela fila
 
@@ -86,7 +110,7 @@ Com o Compose de pé e as dependências instaladas (`bun install`):
 
 ```bash
 bun run demo:send-message --wallet "$WALLET" --player 0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1 --kind BET --amount 10.00
-curl -s localhost:3000/wallets/$WALLET
+curl -s localhost:3000/wallets/$WALLET -H "authorization: Bearer $OPERATOR"
 ```
 
 O script publica um `WagerTransactionRequested` em `wager-transactions.fifo` (`MessageGroupId` = wallet). O worker aplica a operação e o saldo muda em menos de um segundo. Opções: `--kind`, `--amount`, `--currency`, `--provider` e `--reference <externalTransactionId>`.
@@ -96,6 +120,7 @@ O script publica um `WagerTransactionRequested` em `wager-transactions.fifo` (`M
 ```bash
 bun install
 bun run infra:up                 # só postgres e sqs, com healthcheck
+docker compose up -d --wait keycloak
 bun run bootstrap                # migrations e filas
 bun run start:api                # http://localhost:3000
 PORT=3001 bun run start:worker   # em outro terminal (a api já usa a 3000)
@@ -105,7 +130,7 @@ PORT=3001 bun run start:worker   # em outro terminal (a api já usa a 3000)
 
 ## Testes e qualidade
 
-Os testes precisam do PostgreSQL e do MiniStack de pé (`bun run infra:up`). Cada suíte cria o próprio banco e filas com prefixo único, então não interfere no Compose nem em outra execução.
+Os testes precisam do PostgreSQL e do MiniStack de pé (`bun run infra:up`). Cada suíte cria o próprio banco e filas com prefixo único, então não interfere no Compose nem em outra execução. A suíte principal não depende do Keycloak: assina os tokens com uma chave gerada no próprio processo e publica o JWKS dela num servidor local.
 
 | Comando | O que roda |
 |---|---|
@@ -114,6 +139,7 @@ Os testes precisam do PostgreSQL e do MiniStack de pé (`bun run infra:up`). Cad
 | `bun run test:integration` | banco, filas, HTTP e casos de uso contra PostgreSQL e MiniStack reais |
 | `bun run test:concurrency` | cenários concorrentes em processo e com vários processos `api` e `worker` (C1 a C9, matriz de shutdown, reinício) |
 | `bun run test:spike` | as verificações que fixaram as versões da stack |
+| `bun run test:e2e` | o realm do Keycloak contra a API: tokens reais, papéis e `provider_id` (precisa de `docker compose up -d --wait keycloak`) |
 | `bun run test:load --preset smoke` | teste de carga em infraestrutura isolada própria; metodologia, presets e baseline em [LOAD-TEST.md](LOAD-TEST.md) |
 | `bun run typecheck` · `bun run lint` · `bun run format` | `tsc --noEmit`; ESLint e Prettier em modo de checagem; formatação |
 
@@ -156,12 +182,19 @@ Todas são validadas no boot; um valor inválido derruba o processo com uma mens
 | `REFERENCE_MAX_PROCESSING_FAILURES` | `3` | falhas não negociais antes de FAILED |
 | `METRICS_SAMPLE_INTERVAL_MS` | `5000` | amostragem dos gauges de backlog no worker |
 | `READINESS_CACHE_MS` | `2000` | cache das checagens de readiness |
+| `AUTH_ISSUER` | `http://localhost:8080/realms/wagering` | emissor exigido no `iss` do token |
+| `AUTH_AUDIENCE` | `wagering-api` | audiência exigida no `aud` do token |
+| `AUTH_JWKS_URL` | `<AUTH_ISSUER>/protocol/openid-connect/certs` | chaves públicas do IdP; no Compose, `http://keycloak:8080/...` |
+| `AUTH_JWKS_TIMEOUT_MS` | `5000` | timeout da busca das chaves |
+| `AUTH_CLOCK_SKEW_SECONDS` | `5` | tolerância de relógio para `exp` e `nbf` (máximo 300) |
 
 ## Problemas comuns
 
 | Sintoma | Causa provável e solução |
 |---|---|
 | `docker compose up` falha com porta em uso | 3000, 5432 ou 4566 já ocupadas por outro processo; libere a porta ou pare o serviço local |
+| 401 `INVALID_TOKEN` com um token que funcionava | o token expirou (5 minutos); peça outro |
+| 503 em toda rota protegida | a API não conseguiu buscar as chaves do Keycloak; `docker compose ps keycloak` e os logs da api (`identity provider unavailable`) mostram o motivo |
 | `bootstrap` termina com código 1 | `docker compose logs bootstrap` mostra o motivo (`bootstrap failed`, com a mensagem do erro) |
 | `/health/ready` responde 503 | o corpo diz qual dependência caiu: `{"status":"not_ready","checks":{"database":"up","sqs":"down"}}` |
 | api e worker não ficam prontos depois de recriar o container `sqs` | o MiniStack guarda as filas em memória; recrie-as com `docker compose run --rm bootstrap` |
@@ -183,5 +216,6 @@ src/
   shared/         portas e utilitários comuns
   main.api.ts · main.worker.ts · main.bootstrap.ts
 test/
-  unit/ · integration/ · concurrency/ · spike/ · support/
+  unit/ · integration/ · concurrency/ · e2e/ · spike/ · load/ · support/
+keycloak/         realm importado pelo Compose
 ```
