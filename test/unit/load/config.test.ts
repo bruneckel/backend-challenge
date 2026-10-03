@@ -132,6 +132,20 @@ describe('parseLoadArgs', () => {
     });
   });
 
+  test('adds environment variables to the ones a preset sets', () => {
+    const scenarios = parseLoadArgs([
+      '--preset',
+      'retention',
+      '--app-env',
+      'RETENTION_BATCH_SIZE=500',
+    ]).scenarios;
+
+    expect(scenarios.map((scenario) => scenario.appEnv)).toEqual([
+      { RETENTION_BATCH_SIZE: '500' },
+      { RETENTION_ENABLED: 'false', RETENTION_BATCH_SIZE: '500' },
+    ]);
+  });
+
   test('every preset scenario is valid on its own', () => {
     for (const name of Object.keys(PRESETS)) {
       expect(parseLoadArgs(['--preset', name]).scenarios.length).toBe(

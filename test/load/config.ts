@@ -515,6 +515,7 @@ export function parseLoadArgs(argv: readonly string[]): LoadRun {
       ...DEFAULT_SCENARIO,
       ...scenario,
       ...overrides,
+      appEnv: { ...scenario.appEnv, ...overrides.appEnv },
     }));
   }
   if (values.only !== undefined) {
