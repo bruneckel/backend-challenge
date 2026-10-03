@@ -34,6 +34,7 @@ export interface ScenarioConfig {
   seedOperations: number;
   seedHotEntries: number;
   seedEvents: boolean;
+  appEnv: Record<string, string>;
 }
 
 export interface LoadRun {
@@ -73,6 +74,7 @@ export const DEFAULT_SCENARIO: ScenarioConfig = {
   seedOperations: 4,
   seedHotEntries: 0,
   seedEvents: false,
+  appEnv: {},
 };
 
 type PresetScenario = Partial<ScenarioConfig> & { name: string };
@@ -292,6 +294,7 @@ const OPTIONS = {
   'seed-operations': { type: 'string' },
   'seed-hot-entries': { type: 'string' },
   'seed-events': { type: 'boolean' },
+  'app-env': { type: 'string', multiple: true },
 } as const;
 
 const NUMERIC_FLAGS: ReadonlyArray<
@@ -322,10 +325,28 @@ const NUMERIC_FLAGS: ReadonlyArray<
   ['seed-hot-entries', 'seedHotEntries'],
 ];
 
+const APP_ENV = /^([A-Z][A-Z0-9_]*)=(.*)$/;
+
+function appEnvFrom(entries: readonly string[]): Record<string, string> {
+  return Object.fromEntries(
+    entries.map((entry) => {
+      const match = APP_ENV.exec(entry);
+      if (match === null) {
+        throw new Error('--app-env takes NAME=VALUE');
+      }
+      return [match[1]!, match[2]!];
+    }),
+  );
+}
+
 function overridesFrom(
-  values: Record<string, string | boolean | undefined>,
+  values: Record<string, string | boolean | string[] | undefined>,
 ): Partial<ScenarioConfig> {
   const overrides: Record<string, unknown> = {};
+  const appEnv = values['app-env'];
+  if (Array.isArray(appEnv)) {
+    overrides.appEnv = appEnvFrom(appEnv);
+  }
   for (const [flag, field] of NUMERIC_FLAGS) {
     const value = values[flag];
     if (typeof value === 'string') {

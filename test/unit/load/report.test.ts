@@ -48,6 +48,8 @@ const result: ScenarioResult = {
     maxOutboxPending: 40,
     maxConnections: 12,
     publishedEvents: 1980,
+    purgedEvents: 0,
+    purgedMessages: 0,
   },
   consistency: {
     wallets: 201,
@@ -170,6 +172,32 @@ describe('renderReport', () => {
     expect(queued).toContain('| 10 | ok |');
     expect(queued).toContain(
       'eventos entregues 1900 de 1980 (80 ainda na fila)',
+    );
+  });
+
+  test('reports what the retention purged', () => {
+    const purged = renderReport(environment, [
+      {
+        ...result,
+        server: { ...result.server, purgedEvents: 5000, purgedMessages: 1200 },
+      },
+    ]);
+
+    expect(purged).toContain(
+      '- Retenção: 5000 eventos publicados e 1200 mensagens processadas removidos.',
+    );
+  });
+
+  test('lists the variables passed to the application', () => {
+    const tuned = renderReport(environment, [
+      {
+        ...result,
+        config: { ...result.config, appEnv: { RETENTION_ENABLED: 'false' } },
+      },
+    ]);
+
+    expect(tuned).toContain(
+      'Variáveis da aplicação: `RETENTION_ENABLED=false`.',
     );
   });
 

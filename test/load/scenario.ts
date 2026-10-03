@@ -395,6 +395,7 @@ export async function runScenario(
     LOG_LEVEL: config.logLevel,
     DB_POOL_SIZE: String(config.dbPoolSize),
     METRICS_SAMPLE_INTERVAL_MS: '1000',
+    ...config.appEnv,
   };
   const processes: AppProcess[] = [];
   let watch: StreamWatch | undefined;

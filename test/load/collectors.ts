@@ -150,6 +150,8 @@ export function serverResult(
     maxOutboxPending: sampler.maxOutboxPending,
     maxConnections: sampler.maxConnections,
     publishedEvents: sumOf(delta, 'outbox_publish_delay_seconds_count'),
+    purgedEvents: sumOf(delta, 'outbox_events_purged_total'),
+    purgedMessages: sumOf(delta, 'inbox_messages_purged_total'),
   };
 }
 

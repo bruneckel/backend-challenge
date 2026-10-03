@@ -57,6 +57,10 @@ describe('load seed', () => {
         pending: 0,
       });
       expect(await inconsistentWallets(sql)).toEqual([]);
+      const [mismatched] = await sql`
+        select count(*)::int as count from outbox_messages
+        where abs(extract(epoch from uuid_extract_timestamp(id) - occurred_at)) > 1`;
+      expect(mismatched.count).toBe(0);
       const { hot, wallets } = await sampleSeededWallets(sql, 10);
       const [hotWallet] =
         await sql`select version, balance_amount::text as balance from wallets where id = ${hot.id}`;

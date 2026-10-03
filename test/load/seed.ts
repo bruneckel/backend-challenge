@@ -106,7 +106,7 @@ function chunkSql(
     insert into outbox_messages (
       id, aggregate_id, event_type, event_version, message_group_id, payload,
       occurred_at, attempts, next_attempt_at, published_at, last_error)
-    select uuidv7(), transaction_id, e.type, 1, wallet_id::text,
+    select uuidv7(at - now()), transaction_id, e.type, 1, wallet_id::text,
       jsonb_build_object(
         'eventId', uuidv7(), 'eventType', e.type, 'version', 1,
         'occurredAt', at, 'aggregateId', transaction_id, 'correlationId', 'seed',

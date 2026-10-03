@@ -109,6 +109,14 @@ function scenarioSection(result: ScenarioResult): string[] {
     `### ${config.name}`,
     '',
     `Parâmetros: perfil \`${config.profile}\`, canal \`${config.channel}\`, ${config.apiInstances} api / ${config.workerInstances} worker, ${config.wallets} wallets, ${percent(config.hotShare)} na wallet quente, replays ${percent(config.replayShare)}, taxa ${config.rate}/s, pico ${config.spikeRate}/s, aquecimento ${config.warmupSeconds} s, duração ${config.durationSeconds} s, pool ${config.dbPoolSize}, log \`${config.logLevel}\`. Janela medida: ${decimal(result.measuredSeconds)} s.`,
+    ...(Object.keys(config.appEnv).length > 0
+      ? [
+          '',
+          `Variáveis da aplicação: ${Object.entries(config.appEnv)
+            .map(([name, value]) => `\`${name}=${value}\``)
+            .join(', ')}.`,
+        ]
+      : []),
     ...(config.seedWallets > 0
       ? [
           '',
@@ -192,6 +200,11 @@ function scenarioSection(result: ScenarioResult): string[] {
         `- Processamento no servidor, ${channel} (p50 / p95 / p99, ms): ${quantiles(value)}.`,
     ),
     `- Outbox: atraso de publicação (p50 / p95 / p99, ms) ${quantiles(server.outboxDelay)}; maior idade pendente ${decimal(server.maxOutboxAgeSeconds)} s; maior fila ${server.maxOutboxPending}. Eventos publicados: ${server.publishedEvents}. Conexões ao banco (máximo): ${server.maxConnections}.`,
+    ...(server.purgedEvents + server.purgedMessages > 0
+      ? [
+          `- Retenção: ${server.purgedEvents} eventos publicados e ${server.purgedMessages} mensagens processadas removidos.`,
+        ]
+      : []),
     `- Consistência: ${consistency.wallets} wallets conferidas; ${consistency.violations.length} violações; drenagem ${consistency.drained ? `em ${decimal(consistency.drainSeconds)} s` : 'incompleta'}; DLQ ${consistency.dlqDepth}; eventos não publicados ${consistency.unpublished}; eventos entregues ${consistency.eventsDelivered} de ${consistency.outboxEvents}${consistency.eventsQueued > 0 ? ` (${consistency.eventsQueued} ainda na fila)` : ''}; referências pendentes ${consistency.pendingReferences}.`,
     ...consistency.violations.map((violation) => `  - ${violation}`),
     `- Gerador: CPU ${decimal(result.generator.cpuPercent)}% de um núcleo.`,
