@@ -81,6 +81,11 @@ const PROBLEM_TYPES: Readonly<Record<string, ProblemType>> = {
       'www-authenticate': 'Bearer realm="wagering", error="invalid_token"',
     },
   },
+  ACCESS_DENIED: {
+    status: 403,
+    title: 'The token does not grant access to this resource',
+    retryable: false,
+  },
   NOT_FOUND: { status: 404, title: 'Resource not found', retryable: false },
   WALLET_NOT_FOUND: {
     status: 404,

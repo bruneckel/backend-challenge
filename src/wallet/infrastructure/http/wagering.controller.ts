@@ -1,6 +1,11 @@
 import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
+import { AccessDeniedError } from '@platform/auth/auth-errors';
+import { CurrentPrincipal } from '@platform/auth/auth.guard';
+import type { Principal } from '@platform/auth/principal';
+import { assertActsAs, mayRead } from '@platform/auth/provider-access';
 import { CorrelationId } from '@platform/http/correlation';
 import { IdempotencyKey } from '@platform/http/idempotency-key';
+import { TransactionNotFoundError } from '@wallet/application/errors';
 import type { TransactionResult } from '@wallet/application/transaction-result';
 import { SubmitWagerTransaction } from '@wallet/application/use-cases/submit-wager-transaction';
 import { WalletQueries } from '@wallet/application/use-cases/wallet-queries';
@@ -39,8 +44,10 @@ export class WageringController {
     @IdempotencyKey() idempotencyKey: string,
     @CorrelationId() correlationId: string,
     @Body({ schema: wagerOperationSchema }) body: WagerOperationBody,
+    @CurrentPrincipal() principal: Principal,
     @Res({ passthrough: true }) response: ResultWriter,
   ): Promise<TransactionResult> {
+    assertActsAs(principal, body.providerId);
     const result = await this.submitTransaction.execute({
       ...body,
       kind: body.kind as SubmittableKind,
@@ -59,10 +66,15 @@ export class WageringController {
   }
 
   @Get('wagering/transactions/:transactionId')
-  show(
+  async show(
     @Param('transactionId', { schema: uuidParam }) transactionId: string,
+    @CurrentPrincipal() principal: Principal,
   ): Promise<TransactionView> {
-    return this.queries.getTransaction(transactionId);
+    const transaction = await this.queries.getTransaction(transactionId);
+    if (!mayRead(principal, transaction.providerId)) {
+      throw new TransactionNotFoundError(transactionId);
+    }
+    return transaction;
   }
 
   @Get('providers/:providerId/wagering/transactions/:externalTransactionId')
@@ -70,7 +82,11 @@ export class WageringController {
     @Param('providerId', { schema: providerIdParam }) providerId: string,
     @Param('externalTransactionId', { schema: externalTransactionIdParam })
     externalTransactionId: string,
+    @CurrentPrincipal() principal: Principal,
   ): Promise<TransactionView> {
+    if (!mayRead(principal, providerId)) {
+      throw new AccessDeniedError();
+    }
     return this.queries.getTransactionByExternalId(
       providerId,
       externalTransactionId,

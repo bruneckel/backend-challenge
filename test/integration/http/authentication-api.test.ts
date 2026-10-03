@@ -22,6 +22,7 @@ const PROTECTED: [string, string][] = [
   ['POST', '/wagering/transactions'],
   ['GET', `/wagering/transactions/${SOME_ID}`],
   ['GET', '/providers/provider-a/wagering/transactions/ext-1'],
+  ['GET', '/metrics'],
 ];
 
 function submission(): { key: string; body: Record<string, unknown> } {

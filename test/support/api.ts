@@ -91,7 +91,12 @@ export async function requestApi(
   return {
     status: response.status,
     headers: response.headers,
-    body: text === '' ? undefined : JSON.parse(text),
+    body:
+      text === ''
+        ? undefined
+        : response.headers.get('content-type')?.includes('json')
+          ? JSON.parse(text)
+          : text,
   };
 }
 
