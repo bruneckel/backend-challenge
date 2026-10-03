@@ -1,3 +1,4 @@
+import { testIdentity } from '@test/support/identity';
 import {
   type LoadWallet,
   openWalletOverHttp,
@@ -376,6 +377,7 @@ export async function runScenario(
   const drainTimeoutMs = config.drainTimeoutSeconds * 1000;
   const environment = {
     ...storage.environment,
+    ...(await testIdentity()).environment,
     LOG_LEVEL: config.logLevel,
     DB_POOL_SIZE: String(config.dbPoolSize),
     METRICS_SAMPLE_INTERVAL_MS: '1000',

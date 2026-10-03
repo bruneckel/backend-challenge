@@ -1,17 +1,6 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Inject,
-  Param,
-  Post,
-  Req,
-  Res,
-} from '@nestjs/common';
-import type { ProviderIdentityPort } from '@platform/auth/provider-identity';
+import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
 import { CorrelationId } from '@platform/http/correlation';
 import { IdempotencyKey } from '@platform/http/idempotency-key';
-import { PROVIDER_IDENTITY } from '@platform/tokens';
 import type { TransactionResult } from '@wallet/application/transaction-result';
 import { SubmitWagerTransaction } from '@wallet/application/use-cases/submit-wager-transaction';
 import { WalletQueries } from '@wallet/application/use-cases/wallet-queries';
@@ -43,7 +32,6 @@ export class WageringController {
   constructor(
     private readonly submitTransaction: SubmitWagerTransaction,
     private readonly queries: WalletQueries,
-    @Inject(PROVIDER_IDENTITY) private readonly identity: ProviderIdentityPort,
   ) {}
 
   @Post('wagering/transactions')
@@ -51,10 +39,8 @@ export class WageringController {
     @IdempotencyKey() idempotencyKey: string,
     @CorrelationId() correlationId: string,
     @Body({ schema: wagerOperationSchema }) body: WagerOperationBody,
-    @Req() request: unknown,
     @Res({ passthrough: true }) response: ResultWriter,
   ): Promise<TransactionResult> {
-    this.identity.assertMayActFor(body.providerId, request);
     const result = await this.submitTransaction.execute({
       ...body,
       kind: body.kind as SubmittableKind,

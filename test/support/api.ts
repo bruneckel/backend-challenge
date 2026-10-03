@@ -3,6 +3,7 @@ import { createApiApplication } from '@app/api-application';
 import { loadConfig } from '@platform/config/app-config';
 import { type Logger, silentLogger } from '@shared/application/logger';
 import { type TestDatabase, createMigratedDatabase } from './database';
+import { METRICS_READER, OPERATOR, testIdentity } from './identity';
 import { createTestQueues, createTestSqsClient } from './sqs';
 
 export interface ApiResponse {
@@ -14,6 +15,7 @@ export interface ApiResponse {
 export interface RequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
+  token?: string | null;
 }
 
 export interface ApiHarness {
@@ -28,13 +30,50 @@ export interface ApiHarness {
   close(): Promise<void>;
 }
 
+function providerOf(path: string, body: unknown): string | undefined {
+  if (typeof body === 'object' && body !== null) {
+    const { providerId } = body as { providerId?: unknown };
+    if (typeof providerId === 'string' && providerId !== '') {
+      return providerId;
+    }
+  }
+  const match = /^\/providers\/([^/]+)\//.exec(path);
+  return match?.[1] === undefined ? undefined : decodeURIComponent(match[1]);
+}
+
+async function authorizationFor(
+  path: string,
+  options: RequestOptions,
+): Promise<Record<string, string>> {
+  const { body, headers = {}, token } = options;
+  if (
+    token === null ||
+    Object.keys(headers).some((name) => name.toLowerCase() === 'authorization')
+  ) {
+    return {};
+  }
+  const bearer =
+    token ??
+    (await (
+      await testIdentity()
+    ).token({
+      providerId: providerOf(path, body),
+      roles: [OPERATOR, METRICS_READER],
+    }));
+  return { authorization: `Bearer ${bearer}` };
+}
+
 export async function requestApi(
   baseUrl: string,
   method: string,
   path: string,
   options: RequestOptions = {},
 ): Promise<ApiResponse> {
-  const { body, headers = {} } = options;
+  const { body } = options;
+  const headers = {
+    ...(await authorizationFor(path, options)),
+    ...options.headers,
+  };
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers:
@@ -67,6 +106,7 @@ export async function startApi(
     DATABASE_URL: database.url,
     PORT: '0',
     ...queues.environment,
+    ...(await testIdentity()).environment,
     ...environment,
   });
   const app = await createApiApplication(config, { logger });

@@ -1,4 +1,5 @@
 import { SendMessageBatchCommand, type SQSClient } from '@aws-sdk/client-sqs';
+import { bearerFor } from '@test/support/identity';
 import {
   type LoadWallet,
   type Operation,
@@ -100,6 +101,9 @@ export async function submit(
     const response = await fetch(`${baseUrl}/wagering/transactions`, {
       method: 'POST',
       headers: {
+        authorization: await bearerFor({
+          providerId: operation.body.providerId,
+        }),
         'content-type': 'application/json',
         'idempotency-key': operation.idempotencyKey,
       },

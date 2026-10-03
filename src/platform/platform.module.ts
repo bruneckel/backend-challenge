@@ -3,7 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { MikroORM } from '@mikro-orm/postgresql';
 import { PrometheusMetrics } from '@observability/metrics/prometheus-metrics';
 import { AuthGuard } from '@platform/auth/auth.guard';
-import { AnonymousProviderIdentity } from '@platform/auth/provider-identity';
+import { JwtTokenVerifier } from '@platform/auth/jwt-token-verifier';
 import type { AppConfig } from '@platform/config/app-config';
 import { CanonicalJsonFingerprinter } from '@platform/crypto/canonical-json-fingerprinter';
 import { DatabaseHealth } from '@platform/database/database-health';
@@ -18,7 +18,7 @@ import {
   LOGGER,
   METRICS,
   PAYLOAD_FINGERPRINTER,
-  PROVIDER_IDENTITY,
+  TOKEN_VERIFIER,
 } from '@platform/tokens';
 import type { Logger } from '@shared/application/logger';
 
@@ -61,7 +61,10 @@ export class PlatformModule {
           provide: PAYLOAD_FINGERPRINTER,
           useClass: CanonicalJsonFingerprinter,
         },
-        { provide: PROVIDER_IDENTITY, useClass: AnonymousProviderIdentity },
+        {
+          provide: TOKEN_VERIFIER,
+          useFactory: () => new JwtTokenVerifier(config.auth),
+        },
         { provide: APP_GUARD, useClass: AuthGuard },
       ],
       exports: [
@@ -74,7 +77,7 @@ export class PlatformModule {
         CLOCK,
         ID_GENERATOR,
         PAYLOAD_FINGERPRINTER,
-        PROVIDER_IDENTITY,
+        TOKEN_VERIFIER,
       ],
     };
   }

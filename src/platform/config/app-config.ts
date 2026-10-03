@@ -57,6 +57,13 @@ export interface AppConfig {
     metricsSampleIntervalMs: number;
     readinessCacheMs: number;
   };
+  auth: {
+    issuer: string;
+    audience: string;
+    jwksUrl: string;
+    jwksTimeoutMs: number;
+    clockSkewSeconds: number;
+  };
 }
 
 export class InvalidConfigurationError extends Error {
@@ -86,6 +93,11 @@ const toggle = (fallback: boolean) =>
     .enum(['true', 'false'])
     .default(fallback ? 'true' : 'false')
     .transform((value) => value === 'true');
+
+const httpUrl = z.url({
+  protocol: /^https?$/,
+  error: 'must be an http:// or https:// URL',
+});
 
 const environmentSchema = z
   .object({
@@ -147,6 +159,17 @@ const environmentSchema = z
     CONSUMER_RETRY_BASE_MS: integer(2000, 1),
     CONSUMER_RETRY_MAX_MS: integer(120_000, 1),
     CONSUMER_MAX_CONCURRENT_GROUPS: integer(5, 1),
+    AUTH_ISSUER: httpUrl.default('http://localhost:8080/realms/wagering'),
+    AUTH_AUDIENCE: z
+      .string()
+      .regex(
+        /^[\x21-\x7e]{1,255}$/,
+        'must be 1 to 255 visible ASCII characters',
+      )
+      .default('wagering-api'),
+    AUTH_JWKS_URL: httpUrl.optional(),
+    AUTH_JWKS_TIMEOUT_MS: integer(5000, 1),
+    AUTH_CLOCK_SKEW_SECONDS: integer(5, 0, 300),
   })
   .refine(
     (env) => env.REFERENCE_BACKOFF_MAX_MS >= env.REFERENCE_BACKOFF_BASE_MS,
@@ -252,6 +275,15 @@ export function loadConfig(
       logLevel: values.LOG_LEVEL,
       metricsSampleIntervalMs: values.METRICS_SAMPLE_INTERVAL_MS,
       readinessCacheMs: values.READINESS_CACHE_MS,
+    },
+    auth: {
+      issuer: values.AUTH_ISSUER,
+      audience: values.AUTH_AUDIENCE,
+      jwksUrl:
+        values.AUTH_JWKS_URL ??
+        `${values.AUTH_ISSUER.replace(/\/+$/, '')}/protocol/openid-connect/certs`,
+      jwksTimeoutMs: values.AUTH_JWKS_TIMEOUT_MS,
+      clockSkewSeconds: values.AUTH_CLOCK_SKEW_SECONDS,
     },
   };
 }

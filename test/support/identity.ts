@@ -177,3 +177,7 @@ export function testIdentity(): Promise<LocalIdentityProvider> {
   shared ??= LocalIdentityProvider.start();
   return shared;
 }
+
+export async function bearerFor(grant: Grant): Promise<string> {
+  return `Bearer ${await (await testIdentity()).token(grant)}`;
+}

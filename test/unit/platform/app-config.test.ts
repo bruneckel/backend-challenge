@@ -62,6 +62,14 @@ describe('loadConfig', () => {
         metricsSampleIntervalMs: 5000,
         readinessCacheMs: 2000,
       },
+      auth: {
+        issuer: 'http://localhost:8080/realms/wagering',
+        audience: 'wagering-api',
+        jwksUrl:
+          'http://localhost:8080/realms/wagering/protocol/openid-connect/certs',
+        jwksTimeoutMs: 5000,
+        clockSkewSeconds: 5,
+      },
     });
   });
 
@@ -108,6 +116,11 @@ describe('loadConfig', () => {
       LOG_LEVEL: 'warn',
       METRICS_SAMPLE_INTERVAL_MS: '250',
       READINESS_CACHE_MS: '0',
+      AUTH_ISSUER: 'http://localhost:8080/realms/wagering',
+      AUTH_AUDIENCE: 'wallet',
+      AUTH_JWKS_URL: 'http://keycloak:8080/realms/wagering/certs',
+      AUTH_JWKS_TIMEOUT_MS: '2500',
+      AUTH_CLOCK_SKEW_SECONDS: '0',
     });
 
     expect(config).toEqual({
@@ -166,7 +179,24 @@ describe('loadConfig', () => {
         metricsSampleIntervalMs: 250,
         readinessCacheMs: 0,
       },
+      auth: {
+        issuer: 'http://localhost:8080/realms/wagering',
+        audience: 'wallet',
+        jwksUrl: 'http://keycloak:8080/realms/wagering/certs',
+        jwksTimeoutMs: 2500,
+        clockSkewSeconds: 0,
+      },
     });
+  });
+
+  test('derives the key set url from the token issuer', () => {
+    const { auth } = loadConfig({
+      AUTH_ISSUER: 'https://id.example.com/realms/casino/',
+    });
+
+    expect(auth.jwksUrl).toBe(
+      'https://id.example.com/realms/casino/protocol/openid-connect/certs',
+    );
   });
 
   test.each([
@@ -200,6 +230,26 @@ describe('loadConfig', () => {
       'a heartbeat slower than the visibility timeout',
       { SQS_HEARTBEAT_INTERVAL_MS: '30000' },
       /SQS_HEARTBEAT_INTERVAL_MS/,
+    ],
+    [
+      'a token issuer that is not http or https',
+      { AUTH_ISSUER: 'ftp://localhost/realms/wagering' },
+      /AUTH_ISSUER/,
+    ],
+    [
+      'a key set url that is not a url',
+      { AUTH_JWKS_URL: 'keys' },
+      /AUTH_JWKS_URL/,
+    ],
+    [
+      'an audience with spaces',
+      { AUTH_AUDIENCE: 'wagering api' },
+      /AUTH_AUDIENCE/,
+    ],
+    [
+      'a clock skew above five minutes',
+      { AUTH_CLOCK_SKEW_SECONDS: '301' },
+      /AUTH_CLOCK_SKEW_SECONDS/,
     ],
   ])('refuses %s', (_, environment, message) => {
     expect(() => loadConfig(environment)).toThrow(message);
