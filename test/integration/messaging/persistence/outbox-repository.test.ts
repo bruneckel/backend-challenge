@@ -22,11 +22,14 @@ afterEach(async () => {
 
 const NOW = new Date('2026-10-02T12:00:00.000Z');
 
-function eventMessage(occurredAt: Date): OutboxMessage {
+function eventMessage(
+  occurredAt: Date,
+  eventId = Bun.randomUUIDv7(),
+): OutboxMessage {
   const opened = openedWallet('100.00');
   const { entry } = settledBet(opened.wallet);
   const event = WalletBalanceChanged.from(opened.wallet, entry, {
-    eventId: Bun.randomUUIDv7(),
+    eventId,
     correlationId: 'correlation-1',
     occurredAt,
   });
@@ -41,6 +44,33 @@ const enqueue = (...messages: OutboxMessage[]) =>
 
 const claim = (limit = 10, now = NOW) =>
   harness.unitOfWork.run(({ outbox }) => outbox.claimDueBatch(now, limit));
+
+const CUTOFF = new Date('2026-09-25T12:00:00.000Z');
+
+const createdAt = (offsetMs: number) =>
+  eventMessage(
+    minutesFromNow(-1),
+    Bun.randomUUIDv7('hex', new Date(CUTOFF.getTime() + offsetMs)),
+  );
+
+const publish = (...messages: OutboxMessage[]) =>
+  harness.unitOfWork.run(async ({ outbox }) => {
+    for (const message of messages) {
+      message.markPublished(NOW);
+    }
+    await outbox.saveAll(messages);
+  });
+
+const purge = (limit: number) =>
+  harness.unitOfWork.run(({ outbox }) =>
+    outbox.deletePublishedBefore(CUTOFF, limit),
+  );
+
+async function storedIds(): Promise<string[]> {
+  const rows: { id: string }[] = await harness.database
+    .sql`select id from outbox_messages order by id`;
+  return rows.map((row) => row.id);
+}
 
 describe('MikroOrmOutboxRepository', () => {
   test('stores the event envelope and reads it back unchanged', async () => {
@@ -153,6 +183,30 @@ describe('MikroOrmOutboxRepository', () => {
     await harness.unitOfWork.run(({ outbox }) => outbox.saveAll([]));
 
     expect((await claim()).map((claimed) => claimed.id)).toEqual([message.id]);
+  });
+
+  test('deletes the published events created before the cutoff and keeps the rest', async () => {
+    const old = createdAt(-60_000);
+    const recent = createdAt(60_000);
+    const pending = createdAt(-60_000);
+    await enqueue(old, recent, pending);
+    await publish(old, recent);
+
+    const deleted = await purge(10);
+
+    expect(deleted).toBe(1);
+    expect(await storedIds()).toEqual([pending.id, recent.id].sort());
+  });
+
+  test('deletes at most one batch at a time', async () => {
+    const old = [createdAt(-3000), createdAt(-2000), createdAt(-1000)];
+    await enqueue(...old);
+    await publish(...old);
+
+    const batches = [await purge(2), await purge(2), await purge(2)];
+
+    expect(batches).toEqual([2, 1, 0]);
+    expect(await storedIds()).toEqual([]);
   });
 
   test('lets concurrent publishers claim disjoint batches', async () => {

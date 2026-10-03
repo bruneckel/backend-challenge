@@ -1,4 +1,5 @@
 import { type DynamicModule, Module } from '@nestjs/common';
+import { MessageRetentionModule } from '@messaging/infrastructure/message-retention.module';
 import { OutboxPublisherModule } from '@messaging/infrastructure/outbox-publisher.module';
 import { messagingEntities } from '@messaging/infrastructure/persistence/messaging-entities';
 import { HealthModule } from '@observability/health/health.module';
@@ -28,6 +29,7 @@ export class WorkerModule {
         ...(worker.publisherEnabled ? [OutboxPublisherModule] : []),
         ...(worker.consumerEnabled ? [WagerConsumerModule] : []),
         ...(worker.schedulerEnabled ? [PendingReferenceSchedulerModule] : []),
+        ...(worker.retentionEnabled ? [MessageRetentionModule] : []),
       ],
       providers: [ShutdownLogger],
     };

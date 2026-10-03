@@ -41,6 +41,22 @@ function received(overrides: Partial<ReceiveInboxProps> = {}): InboxMessage {
 const record = (message: InboxMessage) =>
   harness.unitOfWork.run(({ inbox }) => inbox.record(message));
 
+async function processed(message: InboxMessage): Promise<InboxMessage> {
+  await record(message);
+  message.markProcessed(message.receivedAt);
+  await harness.unitOfWork.run(({ inbox }) =>
+    inbox.saveProcessed(message, undefined),
+  );
+  return message;
+}
+
+async function stored(messages: readonly InboxMessage[]): Promise<string[]> {
+  const rows: { message_id: string }[] = await harness.database.sql`
+    select message_id from inbox_messages
+    where message_id in ${harness.database.sql(messages.map((message) => message.messageId))}`;
+  return rows.map((row) => row.message_id).sort();
+}
+
 describe('MikroOrmInboxRepository', () => {
   test('records a message the first time it arrives', async () => {
     expect(await record(received())).toEqual({ recorded: true });
@@ -137,5 +153,48 @@ describe('MikroOrmInboxRepository', () => {
     const [row] = await harness.database.sql`
       select processed_at, transaction_id from inbox_messages where message_id = ${message.messageId}`;
     expect(row).toEqual({ processed_at: LATER, transaction_id: bet.id });
+  });
+
+  test('deletes the processed messages received before the cutoff and keeps the rest', async () => {
+    const cutoff = new Date('2020-06-01T00:00:00.000Z');
+    const old = await processed(
+      received({ receivedAt: new Date('2020-01-01T00:00:00.000Z') }),
+    );
+    const recent = await processed(
+      received({ receivedAt: new Date('2020-12-01T00:00:00.000Z') }),
+    );
+    const unfinished = received({
+      receivedAt: new Date('2020-01-02T00:00:00.000Z'),
+    });
+    await record(unfinished);
+
+    const deleted = await harness.unitOfWork.run(({ inbox }) =>
+      inbox.deleteProcessedBefore(cutoff, 100),
+    );
+
+    expect(deleted).toBe(1);
+    expect(await stored([old, recent, unfinished])).toEqual(
+      [recent.messageId, unfinished.messageId].sort(),
+    );
+  });
+
+  test('deletes at most one batch of processed messages at a time', async () => {
+    const cutoff = new Date('2019-06-01T00:00:00.000Z');
+    for (const day of ['01', '02', '03']) {
+      await processed(
+        received({ receivedAt: new Date(`2019-01-${day}T00:00:00.000Z`) }),
+      );
+    }
+
+    const batches: number[] = [];
+    for (let run = 0; run < 3; run += 1) {
+      batches.push(
+        await harness.unitOfWork.run(({ inbox }) =>
+          inbox.deleteProcessedBefore(cutoff, 2),
+        ),
+      );
+    }
+
+    expect(batches).toEqual([2, 1, 0]);
   });
 });

@@ -1,3 +1,4 @@
+import { uuidV7LowerBound } from '@platform/ids/uuid-v7-bound';
 import { LockMode } from '@mikro-orm/core';
 import type { EntityManager } from '@mikro-orm/postgresql';
 import type { OutboxRepository } from '@messaging/application/ports/outbox-repository';
@@ -33,6 +34,21 @@ export class MikroOrmOutboxRepository implements OutboxRepository {
       },
     );
     return rows.map(toOutboxMessage);
+  }
+
+  async deletePublishedBefore(cutoff: Date, limit: number): Promise<number> {
+    const result = await this.em.execute<{ affectedRows: number }>(
+      `delete from outbox_messages
+        where id in (
+          select id from outbox_messages
+           where id < ?::uuid and published_at is not null
+           order by id
+           limit ?
+           for update skip locked)`,
+      [uuidV7LowerBound(cutoff), limit],
+      'run',
+    );
+    return result.affectedRows;
   }
 
   async saveAll(messages: readonly OutboxMessage[]): Promise<void> {

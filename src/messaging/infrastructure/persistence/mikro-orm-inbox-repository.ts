@@ -31,6 +31,21 @@ export class MikroOrmInboxRepository implements InboxRepository {
     return { recorded: false, existing: toInboxMessage(existing) };
   }
 
+  async deleteProcessedBefore(cutoff: Date, limit: number): Promise<number> {
+    const result = await this.em.execute<{ affectedRows: number }>(
+      `delete from inbox_messages
+        where (consumer_name, message_id) in (
+          select consumer_name, message_id from inbox_messages
+           where received_at < ? and processed_at is not null
+           order by received_at
+           limit ?
+           for update skip locked)`,
+      [cutoff, limit],
+      'run',
+    );
+    return result.affectedRows;
+  }
+
   async saveProcessed(
     message: InboxMessage,
     transactionId: string | undefined,

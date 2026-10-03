@@ -5,4 +5,5 @@ export interface OutboxRepository {
   claimDueBatch(now: Date, limit: number): Promise<OutboxMessage[]>;
   save(message: OutboxMessage): Promise<void>;
   saveAll(messages: readonly OutboxMessage[]): Promise<void>;
+  deletePublishedBefore(cutoff: Date, limit: number): Promise<number>;
 }

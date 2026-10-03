@@ -9,4 +9,5 @@ export interface InboxRepository {
     message: InboxMessage,
     transactionId: string | undefined,
   ): Promise<void>;
+  deleteProcessedBefore(cutoff: Date, limit: number): Promise<number>;
 }

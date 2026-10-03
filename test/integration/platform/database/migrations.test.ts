@@ -72,6 +72,17 @@ describe('wagering schema migrations', () => {
     expect(await schemaFunctions()).toEqual(SCHEMA_FUNCTIONS);
   });
 
+  test('build the inbox retention index without a transaction, valid and ready', async () => {
+    await migrateUp(database.url);
+
+    const [index] = await database.sql`
+      select i.indisvalid as valid, i.indisready as ready
+      from pg_index i join pg_class c on c.oid = i.indexrelid
+      where c.relname = 'inbox_messages_received_at'`;
+
+    expect(index).toEqual({ valid: true, ready: true });
+  });
+
   test('apply nothing when the schema is already current', async () => {
     await migrateUp(database.url);
 

@@ -81,6 +81,14 @@ const COUNTERS: Record<CounterName, Definition> = {
     help: 'Ledger entries written to wallet event streams',
     labelNames: [],
   },
+  outbox_events_purged_total: {
+    help: 'Published outbox events deleted after the retention period',
+    labelNames: [],
+  },
+  inbox_messages_purged_total: {
+    help: 'Processed inbox messages deleted after the retention period',
+    labelNames: [],
+  },
 };
 
 const GAUGES: Record<GaugeName, Definition> = {

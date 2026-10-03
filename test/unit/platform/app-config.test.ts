@@ -56,6 +56,7 @@ describe('loadConfig', () => {
         publisherEnabled: true,
         consumerEnabled: true,
         schedulerEnabled: true,
+        retentionEnabled: true,
       },
       observability: {
         logLevel: 'info',
@@ -74,6 +75,12 @@ describe('loadConfig', () => {
         maxStreams: 1000,
         sweepIntervalMs: 500,
         heartbeatIntervalMs: 15000,
+      },
+      retention: {
+        outboxHours: 168,
+        inboxHours: 360,
+        batchSize: 1000,
+        intervalMs: 60000,
       },
     });
   });
@@ -129,6 +136,11 @@ describe('loadConfig', () => {
       STREAM_MAX_STREAMS: '50',
       STREAM_SWEEP_INTERVAL_MS: '250',
       STREAM_HEARTBEAT_INTERVAL_MS: '5000',
+      RETENTION_ENABLED: 'false',
+      OUTBOX_RETENTION_HOURS: '24',
+      INBOX_RETENTION_HOURS: '200',
+      RETENTION_BATCH_SIZE: '500',
+      RETENTION_INTERVAL_MS: '5000',
     });
 
     expect(config).toEqual({
@@ -181,6 +193,7 @@ describe('loadConfig', () => {
         publisherEnabled: false,
         consumerEnabled: false,
         schedulerEnabled: false,
+        retentionEnabled: false,
       },
       observability: {
         logLevel: 'warn',
@@ -198,6 +211,12 @@ describe('loadConfig', () => {
         maxStreams: 50,
         sweepIntervalMs: 250,
         heartbeatIntervalMs: 5000,
+      },
+      retention: {
+        outboxHours: 24,
+        inboxHours: 200,
+        batchSize: 500,
+        intervalMs: 5000,
       },
     });
   });
@@ -268,6 +287,16 @@ describe('loadConfig', () => {
       'a stream heartbeat faster than one second',
       { STREAM_HEARTBEAT_INTERVAL_MS: '999' },
       /STREAM_HEARTBEAT_INTERVAL_MS/,
+    ],
+    [
+      'an inbox kept for less than a week',
+      { INBOX_RETENTION_HOURS: '167' },
+      /INBOX_RETENTION_HOURS/,
+    ],
+    [
+      'a retention batch above ten thousand rows',
+      { RETENTION_BATCH_SIZE: '10001' },
+      /RETENTION_BATCH_SIZE/,
     ],
     [
       'a clock skew above five minutes',
