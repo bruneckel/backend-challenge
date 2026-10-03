@@ -74,6 +74,7 @@ export interface AppConfig {
     outboxHours: number;
     inboxHours: number;
     batchSize: number;
+    batchPauseMs: number;
     intervalMs: number;
   };
 }
@@ -189,6 +190,7 @@ const environmentSchema = z
     OUTBOX_RETENTION_HOURS: integer(168, 1),
     INBOX_RETENTION_HOURS: integer(360, 168),
     RETENTION_BATCH_SIZE: integer(1000, 1, 10_000),
+    RETENTION_BATCH_PAUSE_MS: integer(250, 0, 60_000),
     RETENTION_INTERVAL_MS: integer(60_000, 1000),
   })
   .refine(
@@ -315,6 +317,7 @@ export function loadConfig(
       outboxHours: values.OUTBOX_RETENTION_HOURS,
       inboxHours: values.INBOX_RETENTION_HOURS,
       batchSize: values.RETENTION_BATCH_SIZE,
+      batchPauseMs: values.RETENTION_BATCH_PAUSE_MS,
       intervalMs: values.RETENTION_INTERVAL_MS,
     },
   };

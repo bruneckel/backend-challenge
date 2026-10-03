@@ -80,6 +80,7 @@ describe('loadConfig', () => {
         outboxHours: 168,
         inboxHours: 360,
         batchSize: 1000,
+        batchPauseMs: 250,
         intervalMs: 60000,
       },
     });
@@ -140,6 +141,7 @@ describe('loadConfig', () => {
       OUTBOX_RETENTION_HOURS: '24',
       INBOX_RETENTION_HOURS: '200',
       RETENTION_BATCH_SIZE: '500',
+      RETENTION_BATCH_PAUSE_MS: '0',
       RETENTION_INTERVAL_MS: '5000',
     });
 
@@ -216,6 +218,7 @@ describe('loadConfig', () => {
         outboxHours: 24,
         inboxHours: 200,
         batchSize: 500,
+        batchPauseMs: 0,
         intervalMs: 5000,
       },
     });
@@ -297,6 +300,11 @@ describe('loadConfig', () => {
       'a retention batch above ten thousand rows',
       { RETENTION_BATCH_SIZE: '10001' },
       /RETENTION_BATCH_SIZE/,
+    ],
+    [
+      'a pause between retention batches above one minute',
+      { RETENTION_BATCH_PAUSE_MS: '60001' },
+      /RETENTION_BATCH_PAUSE_MS/,
     ],
     [
       'a clock skew above five minutes',

@@ -41,6 +41,7 @@ export class MessageRetentionRunner
         );
       },
       idleDelayMs: config.retention.intervalMs,
+      busyDelayMs: config.retention.batchPauseMs,
       errorBackoff: ExponentialBackoff.create({ baseMs: 1000, maxMs: 60_000 }),
       onError: (error, consecutiveFailures) =>
         logger.error('message retention step failed', {

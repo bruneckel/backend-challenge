@@ -1,4 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
 import type { SQSClient } from '@aws-sdk/client-sqs';
 import type { INestApplication } from '@nestjs/common';
 import { createWorkerApplication } from '@app/worker-application';
@@ -30,8 +37,12 @@ beforeAll(async () => {
   queues = await createTestQueues(sqs);
 });
 
-afterAll(async () => {
+afterEach(async () => {
   await worker?.close();
+  await harness.database.sql`delete from outbox_messages`;
+});
+
+afterAll(async () => {
   await queues.delete();
   sqs.destroy();
   await harness.close();
@@ -61,24 +72,27 @@ async function storedIds(): Promise<string[]> {
   return rows.map((row) => row.id);
 }
 
+async function startWorker(settings: Record<string, string>): Promise<void> {
+  const config = loadConfig({
+    DATABASE_URL: harness.database.url,
+    PORT: '0',
+    ...queues.environment,
+    ...(await testIdentity()).environment,
+    OUTBOX_PUBLISHER_ENABLED: 'false',
+    CONSUMER_ENABLED: 'false',
+    REFERENCE_SCHEDULER_ENABLED: 'false',
+    OUTBOX_RETENTION_HOURS: '24',
+    ...settings,
+  });
+  worker = await createWorkerApplication(config, { logger: silentLogger });
+  await worker.init();
+}
+
 describe('message retention in the worker', () => {
   test('purges expired published events in a loop and keeps the recent ones', async () => {
     const expired = await publishedEvent(new Date(Date.now() - 48 * 3_600_000));
     const recent = await publishedEvent(new Date());
-    const config = loadConfig({
-      DATABASE_URL: harness.database.url,
-      PORT: '0',
-      ...queues.environment,
-      ...(await testIdentity()).environment,
-      OUTBOX_PUBLISHER_ENABLED: 'false',
-      CONSUMER_ENABLED: 'false',
-      REFERENCE_SCHEDULER_ENABLED: 'false',
-      OUTBOX_RETENTION_HOURS: '24',
-      RETENTION_INTERVAL_MS: '1000',
-    });
-
-    worker = await createWorkerApplication(config, { logger: silentLogger });
-    await worker.init();
+    await startWorker({ RETENTION_INTERVAL_MS: '1000' });
 
     await waitUntil(async () => !(await storedIds()).includes(expired), {
       description: 'the expired event to be purged',
@@ -88,5 +102,31 @@ describe('message retention in the worker', () => {
       description: 'the loop to purge again after its interval',
     });
     expect(await storedIds()).toEqual([recent]);
+  });
+
+  test('pauses between full batches', async () => {
+    const day = 24 * 3_600_000;
+    for (const age of [4, 3, 2]) {
+      await publishedEvent(new Date(Date.now() - age * day));
+    }
+    await startWorker({
+      RETENTION_BATCH_SIZE: '1',
+      RETENTION_BATCH_PAUSE_MS: '1000',
+    });
+
+    await waitUntil(async () => (await storedIds()).length === 2, {
+      description: 'the first batch to be purged',
+      intervalMs: 10,
+    });
+    const remaining: number[] = [];
+    for (let sample = 0; sample < 5; sample += 1) {
+      remaining.push((await storedIds()).length);
+      await Bun.sleep(50);
+    }
+
+    expect(remaining).toEqual([2, 2, 2, 2, 2]);
+    await waitUntil(async () => (await storedIds()).length === 0, {
+      description: 'the remaining batches to be purged after their pauses',
+    });
   });
 });
