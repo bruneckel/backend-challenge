@@ -2,6 +2,7 @@ import { uuidV7LowerBound } from '@platform/ids/uuid-v7-bound';
 import { LockMode } from '@mikro-orm/core';
 import type { EntityManager } from '@mikro-orm/postgresql';
 import type { OutboxRepository } from '@messaging/application/ports/outbox-repository';
+import type { PurgedBatch } from '@messaging/application/ports/purged-batch';
 import type { OutboxMessage } from '@messaging/domain/outbox-message';
 import {
   OutboxMessageRecord,
@@ -36,19 +37,30 @@ export class MikroOrmOutboxRepository implements OutboxRepository {
     return rows.map(toOutboxMessage);
   }
 
-  async deletePublishedBefore(cutoff: Date, limit: number): Promise<number> {
-    const result = await this.em.execute<{ affectedRows: number }>(
+  async deletePublishedBefore(
+    cutoff: Date,
+    limit: number,
+    after?: string,
+  ): Promise<PurgedBatch<string>> {
+    const rows = await this.em.execute<{ id: string }[]>(
       `delete from outbox_messages
         where id in (
           select id from outbox_messages
-           where id < ?::uuid and published_at is not null
+           where id > coalesce(?::uuid, '00000000-0000-0000-0000-000000000000')
+             and id < ?::uuid and published_at is not null
            order by id
            limit ?
-           for update skip locked)`,
-      [uuidV7LowerBound(cutoff), limit],
-      'run',
+           for update skip locked)
+        returning id`,
+      [after ?? null, uuidV7LowerBound(cutoff), limit],
+      'all',
     );
-    return result.affectedRows;
+    const last = rows.reduce<string | undefined>(
+      (latest, row) =>
+        latest === undefined || row.id > latest ? row.id : latest,
+      undefined,
+    );
+    return { count: rows.length, last };
   }
 
   async saveAll(messages: readonly OutboxMessage[]): Promise<void> {

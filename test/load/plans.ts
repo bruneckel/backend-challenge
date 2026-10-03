@@ -160,13 +160,13 @@ const checks: [string, string, unknown[]][] = [
   ],
   [
     'purge 1,000 published events older than 7 days',
-    'delete from outbox_messages where id in (select id from outbox_messages where id < $1::uuid and published_at is not null order by id limit 1000 for update skip locked)',
-    [uuidV7LowerBound(new Date(Date.now() - 168 * 3_600_000))],
+    "delete from outbox_messages where id in (select id from outbox_messages where id > coalesce($1::uuid, '00000000-0000-0000-0000-000000000000') and id < $2::uuid and published_at is not null order by id limit 1000 for update skip locked) returning id",
+    [null, uuidV7LowerBound(new Date(Date.now() - 168 * 3_600_000))],
   ],
   [
     'purge 1,000 processed inbox messages older than 15 days',
-    'delete from inbox_messages where (consumer_name, message_id) in (select consumer_name, message_id from inbox_messages where received_at < $1 and processed_at is not null order by received_at limit 1000 for update skip locked)',
-    [new Date(Date.now() - 360 * 3_600_000).toISOString()],
+    "delete from inbox_messages where (consumer_name, message_id) in (select consumer_name, message_id from inbox_messages where received_at >= coalesce($1::timestamptz, '-infinity') and received_at < $2 and processed_at is not null order by received_at limit 1000 for update skip locked) returning received_at",
+    [null, new Date(Date.now() - 360 * 3_600_000).toISOString()],
   ],
   [
     'versions of 100 watched wallets (stream sweep)',

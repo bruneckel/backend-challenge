@@ -61,9 +61,9 @@ const publish = (...messages: OutboxMessage[]) =>
     await outbox.saveAll(messages);
   });
 
-const purge = (limit: number) =>
+const purge = (limit: number, after?: string) =>
   harness.unitOfWork.run(({ outbox }) =>
-    outbox.deletePublishedBefore(CUTOFF, limit),
+    outbox.deletePublishedBefore(CUTOFF, limit, after),
   );
 
 async function storedIds(): Promise<string[]> {
@@ -194,7 +194,7 @@ describe('MikroOrmOutboxRepository', () => {
 
     const deleted = await purge(10);
 
-    expect(deleted).toBe(1);
+    expect(deleted).toEqual({ count: 1, last: old.id });
     expect(await storedIds()).toEqual([pending.id, recent.id].sort());
   });
 
@@ -205,8 +205,20 @@ describe('MikroOrmOutboxRepository', () => {
 
     const batches = [await purge(2), await purge(2), await purge(2)];
 
-    expect(batches).toEqual([2, 1, 0]);
+    expect(batches.map((batch) => batch.count)).toEqual([2, 1, 0]);
     expect(await storedIds()).toEqual([]);
+  });
+
+  test('deletes only the events after a given position, oldest first', async () => {
+    const events = [createdAt(-3000), createdAt(-2000), createdAt(-1000)];
+    await enqueue(...events);
+    await publish(...events);
+
+    const deleted = await purge(10, events[0]!.id);
+
+    expect(deleted).toEqual({ count: 2, last: events[2]!.id });
+    expect(await storedIds()).toEqual([events[0]!.id]);
+    await purge(10);
   });
 
   test('lets concurrent publishers claim disjoint batches', async () => {

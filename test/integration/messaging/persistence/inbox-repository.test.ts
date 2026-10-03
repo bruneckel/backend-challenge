@@ -173,7 +173,10 @@ describe('MikroOrmInboxRepository', () => {
       inbox.deleteProcessedBefore(cutoff, 100),
     );
 
-    expect(deleted).toBe(1);
+    expect(deleted).toEqual({
+      count: 1,
+      last: new Date('2020-01-01T00:00:00.000Z'),
+    });
     expect(await stored([old, recent, unfinished])).toEqual(
       [recent.messageId, unfinished.messageId].sort(),
     );
@@ -189,13 +192,38 @@ describe('MikroOrmInboxRepository', () => {
 
     const batches: number[] = [];
     for (let run = 0; run < 3; run += 1) {
-      batches.push(
-        await harness.unitOfWork.run(({ inbox }) =>
-          inbox.deleteProcessedBefore(cutoff, 2),
+      const batch = await harness.unitOfWork.run(({ inbox }) =>
+        inbox.deleteProcessedBefore(cutoff, 2),
+      );
+      batches.push(batch.count);
+    }
+
+    expect(batches).toEqual([2, 1, 0]);
+  });
+
+  test('deletes only the messages received from a given time on, oldest first', async () => {
+    const cutoff = new Date('2018-06-01T00:00:00.000Z');
+    const messages = [];
+    for (const day of ['01', '02', '03']) {
+      messages.push(
+        await processed(
+          received({ receivedAt: new Date(`2018-01-${day}T00:00:00.000Z`) }),
         ),
       );
     }
 
-    expect(batches).toEqual([2, 1, 0]);
+    const deleted = await harness.unitOfWork.run(({ inbox }) =>
+      inbox.deleteProcessedBefore(
+        cutoff,
+        10,
+        new Date('2018-01-02T00:00:00.000Z'),
+      ),
+    );
+
+    expect(deleted).toEqual({
+      count: 2,
+      last: new Date('2018-01-03T00:00:00.000Z'),
+    });
+    expect(await stored(messages)).toEqual([messages[0]!.messageId]);
   });
 });
