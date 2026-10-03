@@ -384,6 +384,13 @@ A resposta traz os seis campos do enunciado (`walletId`, `storedBalance`, `calcu
 
 **Métricas** (`GET /metrics` na api e no worker, formato Prometheus, rótulos padrão `role` e `instance`; exige um token com o papel `metrics-reader`, que o Prometheus obtém sozinho com `oauth2` `client_credentials` no `scrape_config`). Os contadores são registrados depois do commit, então rollbacks e retries não os inflam. O profile `observability` do Compose sobe esse Prometheus (`observability/prometheus/prometheus.yml`, com `honor_labels` para manter os rótulos da aplicação) e um Grafana com o painel provisionado. Um teste confere que cada consulta do painel usa uma métrica exportada e que toda métrica exportada tem painel.
 
+**Tracing (PoC).** Uma PoC de OpenTelemetry, na branch `poc/opentelemetry`, que não entra na `main`, confirmou que spans manuais funcionam no Bun.
+- **Spans:** HTTP, caso de uso, unidade de trabalho, consumo e publicação SQS, com `traceparent` nos atributos das mensagens.
+- **Custo:** de 3% a 5% da vazão de pico da api com 100% das requisições rastreadas.
+- **Ausências:** a PoC não atravessa a outbox, o que pediria uma coluna para o `traceparent` do enqueue, nem guarda valores nos spans.
+
+Os números e o que falta para adotar estão em LOAD-TEST.md.
+
 | Métrica | Tipo | Rótulos |
 |---|---|---|
 | `wager_transactions_total` | contador | `kind`, `status`, `channel` (`http`, `sqs`, `worker`) |
@@ -595,7 +602,7 @@ Cada réplica aceita até `STREAM_MAX_STREAMS` (1000) streams; acima disso respo
 ## Trade-offs e limitações
 
 - **Transação aberta durante o envio ao SQS** no publisher: mantém o modelo `OutboxMessage` simples e o claim seguro com `SKIP LOCKED`, ao custo de segurar as linhas da outbox (nunca a wallet) por até `SQS_PUBLISH_TIMEOUT_MS`.
-- **Contador de falhas do scheduler em memória:** com N instâncias, chegar a FAILED pode levar até N vezes mais tentativas. Só afeta o caminho de erro não negocial.
+- **Contador de falhas do scheduler em memória:** com N instâncias, chegar a FAILED pode levar até N vezes mais tentativas (`REFERENCE_MAX_PROCESSING_FAILURES`, 3 por padrão, vale por instância), e um restart zera a contagem. Só afeta o caminho de erro não negocial. Decidido na Etapa 4 (N3): fica em memória. O total continua limitado, nenhuma medição passou por esse caminho, e persistir a contagem pediria uma coluna e uma escrita a mais a cada falha.
 - **Realm importado só na primeira subida:** com o banco persistente, o Keycloak não reaplica o `wagering-realm.json` a cada subida, como fazia o `start-dev`. Editar o JSON pede a reimportação descrita no README.
 - **Ordem dos eventos** é a de publicação, não a de commit; o consumidor usa `eventId` e `walletVersion`.
 - **Uma wallet muito disputada** serializa no lock da linha: a vazão por wallet é limitada pela duração da transação (curta, sem I/O externo); `lock_timeout` de 3 s vira 503 ou backoff.

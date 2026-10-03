@@ -285,6 +285,44 @@ A migration que acrescentou `BALANCE_LIMIT_EXCEEDED` trocava o `CHECK` de `failu
 - **Decisão:** a migration foi reescrita antes de ser publicada. Ela roda fora de transação e valida num comando separado, que usa `SHARE UPDATE EXCLUSIVE` e deixa leitura e escrita seguirem.
 - **Regra para as próximas** (ARCHITECTURE.md): `CHECK` como `NOT VALID` + `VALIDATE`, índice com `CONCURRENTLY`.
 
+### PoC de OpenTelemetry (Etapa 4)
+
+A pergunta do plano era se o OpenTelemetry funciona no Bun. A auto-instrumentação do Node depende de hooks de módulo, então a PoC usou spans manuais. O código está na branch `poc/opentelemetry` e não entra na `main`.
+
+- **Compatibilidade (Bun 1.3.14, API 1.9.1, SDK 2.11.0, exportador OTLP/HTTP 0.222.0, Jaeger 2.21.0):**
+  - o contexto em `AsyncLocalStorage` atravessa `await`, `Promise.all` e `setTimeout`, com cada span no pai certo;
+  - o `traceparent` W3C é injetado e extraído;
+  - a exportação OTLP/HTTP chega ao Jaeger.
+- **O que foi instrumentado:**
+  - um middleware HTTP abre o span do servidor a partir do `traceparent` recebido, com rota e status;
+  - o controller cria "submit wager transaction", com o tipo e o canal, nunca o valor;
+  - a unidade de trabalho cria um span por transação;
+  - o consumidor SQS continua o trace a partir do `traceparent` nos atributos da mensagem;
+  - o publisher da outbox cria o span de publicação e injeta o `traceparent` em cada evento enviado.
+- **Conferido no Jaeger:**
+  - uma aposta pela api com um `traceparent` de fora gerou o span HTTP pendurado no pai remoto, com "submit wager transaction" e "unit of work" embaixo;
+  - um comando pela fila com `traceparent` gerou "process message" pendurado no pai remoto, com "unit of work" embaixo.
+- **Atravessar a outbox:** o evento é publicado depois, por outro processo, então a publicação começa um trace próprio. Ligar o evento à requisição de origem pede guardar o `traceparent` do momento do enqueue numa coluna nova da outbox, com cerca de 55 bytes por evento. Com ela, o span de publicação faria um *link* para a origem de cada evento do lote, e não um pai, porque um lote junta eventos de várias requisições. Também injetaria o `traceparent` de origem em cada mensagem. Pôr o `traceparent` no payload mudaria o contrato público do evento. Até lá, o `correlationId` que o envelope já carrega liga os dois lados nos logs.
+
+Custo: A/B no `http-saturation-1x1`, com degraus de 16, 32 e 64 clientes e três rodadas alternadas, tracing desligado contra ligado em 100% das requisições, exportando para um Jaeger na mesma máquina. Durante as seis execuções, o Compose de desenvolvimento com o profile de métricas estava no ar, igual para os dois lados, então os números absolutos ficam abaixo da referência. Vazão média em requisições bem-sucedidas por segundo:
+
+| Clientes | Desligado | Ligado | Diferença |
+|---|---|---|---|
+| 16 | 1.266 | 1.226 | −3,2% |
+| 32 | 1.232 | 1.218 | −1,2% |
+| 64 | 1.263 | 1.223 | −3,2% |
+
+- **Pico de cada execução:** de 1.211 a 1.314 com o tracing desligado e de 1.219 a 1.248 com ele ligado. O p50 do processamento no servidor subiu cerca de 1,5 ms na saturação.
+- **Sem erro e sem violação** nas seis execuções.
+- **Decisão:** a PoC responde que dá para adotar. O custo com 100% de amostragem é da ordem do da autenticação (3% a 5% da vazão de pico da api), e uma amostragem por proporção, herdada do pai, o reduziria na mesma proporção.
+- **Para adotar** falta o que a PoC deixou de lado:
+  - a configuração no `AppConfig`, com amostragem;
+  - o envio dos spans pendentes no desligamento;
+  - a coluna da outbox, se o trace do evento ponta a ponta for desejado;
+  - os testes.
+
+  Fica como decisão à parte.
+
 ## Baseline
 
 Execução `bun run test:load --preset baseline` de 2026-10-03, no commit `f3c7602` (com a gravação do lote da outbox num único `UPDATE`), antes da autenticação; o custo dela está medido em "Custo da autenticação". Os dados completos ficam no relatório gerado. Latências em ms; vazão em operações bem-sucedidas por segundo. Em saturação, a linha mostra o degrau de maior vazão; em SQS, a latência vai do envio ao processamento.
