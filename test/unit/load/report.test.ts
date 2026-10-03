@@ -59,6 +59,7 @@ const result: ScenarioResult = {
     pendingReferences: 0,
     outboxEvents: 1980,
     eventsDelivered: 1980,
+    eventsQueued: 0,
   },
   generator: { cpuPercent: 37.5 },
 };
@@ -152,6 +153,24 @@ describe('renderReport', () => {
     ]);
 
     expect(missing).toContain('| 10 | **80 eventos não entregues** |');
+  });
+
+  test('accepts events still waiting in the queue as delivered later, not lost', () => {
+    const queued = renderReport(environment, [
+      {
+        ...result,
+        consistency: {
+          ...result.consistency,
+          eventsDelivered: 1900,
+          eventsQueued: 80,
+        },
+      },
+    ]);
+
+    expect(queued).toContain('| 10 | ok |');
+    expect(queued).toContain(
+      'eventos entregues 1900 de 1980 (80 ainda na fila)',
+    );
   });
 
   test('summarizes a publish scenario by the events published per second', () => {

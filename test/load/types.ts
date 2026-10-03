@@ -92,6 +92,7 @@ export interface ConsistencyResult {
   pendingReferences: number;
   outboxEvents: number;
   eventsDelivered: number;
+  eventsQueued: number;
 }
 
 export interface ScenarioResult {

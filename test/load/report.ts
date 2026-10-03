@@ -23,7 +23,7 @@ function errorsOf(outcomes: Record<string, number>): number {
 }
 
 function verdict(result: ScenarioResult): string {
-  const { violations, drained, outboxEvents, eventsDelivered } =
+  const { violations, drained, outboxEvents, eventsDelivered, eventsQueued } =
     result.consistency;
   if (violations.length > 0) {
     return `**${violations.length} ${violations.length === 1 ? 'violação' : 'violações'}**`;
@@ -31,8 +31,9 @@ function verdict(result: ScenarioResult): string {
   if (!drained) {
     return '**não drenou**';
   }
-  if (eventsDelivered < outboxEvents) {
-    return `**${outboxEvents - eventsDelivered} eventos não entregues**`;
+  const missing = outboxEvents - eventsDelivered - eventsQueued;
+  if (missing > 0) {
+    return `**${missing} eventos não entregues**`;
   }
   return 'ok';
 }
@@ -171,7 +172,7 @@ function scenarioSection(result: ScenarioResult): string[] {
         `- Processamento no servidor, ${channel} (p50 / p95 / p99, ms): ${quantiles(value)}.`,
     ),
     `- Outbox: atraso de publicação (p50 / p95 / p99, ms) ${quantiles(server.outboxDelay)}; maior idade pendente ${decimal(server.maxOutboxAgeSeconds)} s; maior fila ${server.maxOutboxPending}. Eventos publicados: ${server.publishedEvents}. Conexões ao banco (máximo): ${server.maxConnections}.`,
-    `- Consistência: ${consistency.wallets} wallets conferidas; ${consistency.violations.length} violações; drenagem ${consistency.drained ? `em ${decimal(consistency.drainSeconds)} s` : 'incompleta'}; DLQ ${consistency.dlqDepth}; eventos não publicados ${consistency.unpublished}; eventos entregues ${consistency.eventsDelivered} de ${consistency.outboxEvents}; referências pendentes ${consistency.pendingReferences}.`,
+    `- Consistência: ${consistency.wallets} wallets conferidas; ${consistency.violations.length} violações; drenagem ${consistency.drained ? `em ${decimal(consistency.drainSeconds)} s` : 'incompleta'}; DLQ ${consistency.dlqDepth}; eventos não publicados ${consistency.unpublished}; eventos entregues ${consistency.eventsDelivered} de ${consistency.outboxEvents}${consistency.eventsQueued > 0 ? ` (${consistency.eventsQueued} ainda na fila)` : ''}; referências pendentes ${consistency.pendingReferences}.`,
     ...consistency.violations.map((violation) => `  - ${violation}`),
     `- Gerador: CPU ${decimal(result.generator.cpuPercent)}% de um núcleo.`,
     '',

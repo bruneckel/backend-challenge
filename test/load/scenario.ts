@@ -559,7 +559,8 @@ export async function runScenario(
     const wallMs = performance.now() - wallAtStart;
     sampler.stop();
     const after = await scrape([...apis, ...context.workers]);
-    await sink.catchUp(await outboxEvents(storage), 60_000);
+    await sink.catchUp(await outboxEvents(storage), drainTimeoutMs);
+    await sink.stop();
     return {
       config,
       measuredSeconds,

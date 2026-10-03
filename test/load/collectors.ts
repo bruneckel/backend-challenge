@@ -221,6 +221,7 @@ export async function consistencyOf(
     pendingReferences: pending,
     outboxEvents: events,
     eventsDelivered: sink.delivered,
+    eventsQueued: await queueDepth(storage.sqs, storage.queues.events),
   };
 }
 
@@ -240,9 +241,21 @@ export class EventSink {
     this.loops = Array.from({ length: receivers }, () => this.receive());
   }
 
-  async catchUp(expected: number, timeoutMs: number): Promise<void> {
+  async catchUp(
+    expected: number,
+    timeoutMs: number,
+    stallMs = 15_000,
+  ): Promise<void> {
     const deadline = performance.now() + timeoutMs;
+    let seen = this.delivered;
+    let progressAt = performance.now();
     while (this.delivered < expected && performance.now() < deadline) {
+      if (this.delivered > seen) {
+        seen = this.delivered;
+        progressAt = performance.now();
+      } else if (performance.now() - progressAt > stallMs) {
+        return;
+      }
       await Bun.sleep(100);
     }
   }
