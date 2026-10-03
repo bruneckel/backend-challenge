@@ -173,6 +173,25 @@ describe('renderReport', () => {
     );
   });
 
+  test('describes the seeded database a scenario ran on', () => {
+    const seeded = renderReport(environment, [
+      {
+        ...result,
+        config: {
+          ...result.config,
+          seedWallets: 1_000_000,
+          seedOperations: 4,
+          seedHotEntries: 0,
+          seedEvents: false,
+        },
+      },
+    ]);
+
+    expect(seeded).toContain(
+      'Base semeada: 1000000 wallets com 4 operações cada; eventos publicados na outbox: não. O tráfego sorteia 200 dessas wallets.',
+    );
+  });
+
   test('summarizes the wallet streams of a scenario', () => {
     const streamed = renderReport(environment, [
       {

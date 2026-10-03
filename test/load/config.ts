@@ -30,6 +30,10 @@ export interface ScenarioConfig {
   logLevel: string;
   dbPoolSize: number;
   subscribers: number;
+  seedWallets: number;
+  seedOperations: number;
+  seedHotEntries: number;
+  seedEvents: boolean;
 }
 
 export interface LoadRun {
@@ -65,6 +69,10 @@ export const DEFAULT_SCENARIO: ScenarioConfig = {
   logLevel: 'info',
   dbPoolSize: 10,
   subscribers: 0,
+  seedWallets: 0,
+  seedOperations: 4,
+  seedHotEntries: 0,
+  seedEvents: false,
 };
 
 type PresetScenario = Partial<ScenarioConfig> & { name: string };
@@ -122,6 +130,36 @@ export const PRESETS: Record<string, PresetScenario[]> = {
       warmupSeconds: 1,
       durationSeconds: 15,
       outageSeconds: 3,
+    },
+  ],
+  scale: [
+    {
+      name: 'scale-http-saturation-1x1',
+      profile: 'saturation',
+      seedWallets: 1_000_000,
+      wallets: 200_000,
+      concurrencySteps: [16, 32, 64],
+    },
+    {
+      name: 'scale-http-saturation-3x3',
+      profile: 'saturation',
+      apiInstances: 3,
+      workerInstances: 3,
+      seedWallets: 1_000_000,
+      wallets: 200_000,
+      concurrencySteps: [16, 32, 64],
+    },
+    {
+      name: 'scale-mixed-sustained-3x3',
+      channel: 'mixed',
+      apiInstances: 3,
+      workerInstances: 3,
+      seedWallets: 1_000_000,
+      wallets: 200_000,
+      hotShare: 0.2,
+      replayShare: 0.05,
+      rate: 300,
+      durationSeconds: 60,
     },
   ],
   baseline: [
@@ -250,6 +288,10 @@ const OPTIONS = {
   'log-level': { type: 'string' },
   pool: { type: 'string' },
   subscribers: { type: 'string' },
+  'seed-wallets': { type: 'string' },
+  'seed-operations': { type: 'string' },
+  'seed-hot-entries': { type: 'string' },
+  'seed-events': { type: 'boolean' },
 } as const;
 
 const NUMERIC_FLAGS: ReadonlyArray<
@@ -275,6 +317,9 @@ const NUMERIC_FLAGS: ReadonlyArray<
   ['max-p99-ms', 'maxP99Ms'],
   ['pool', 'dbPoolSize'],
   ['subscribers', 'subscribers'],
+  ['seed-wallets', 'seedWallets'],
+  ['seed-operations', 'seedOperations'],
+  ['seed-hot-entries', 'seedHotEntries'],
 ];
 
 function overridesFrom(
@@ -299,6 +344,9 @@ function overridesFrom(
   }
   if (typeof values['log-level'] === 'string') {
     overrides.logLevel = values['log-level'];
+  }
+  if (values['seed-events'] === true) {
+    overrides.seedEvents = true;
   }
   if (typeof values.steps === 'string') {
     overrides.concurrencySteps = values.steps.split(',').map(Number);
@@ -380,6 +428,18 @@ export function validateScenario(scenario: ScenarioConfig): ScenarioConfig {
     (scenario.profile === 'backlog' || scenario.profile === 'publish')
   ) {
     throw new Error(`${scenario.profile} does not open streams`);
+  }
+  for (const field of [
+    'seedWallets',
+    'seedOperations',
+    'seedHotEntries',
+  ] as const) {
+    if (!Number.isInteger(scenario[field]) || scenario[field] < 0) {
+      throw new Error(`${field} must be a non-negative integer`);
+    }
+  }
+  if (scenario.seedWallets > 0 && scenario.wallets > scenario.seedWallets) {
+    throw new Error('wallets must not exceed seedWallets');
   }
   if (scenario.profile === 'saturation' && scenario.channel !== 'http') {
     throw new Error('saturation needs the http channel');

@@ -109,6 +109,12 @@ function scenarioSection(result: ScenarioResult): string[] {
     `### ${config.name}`,
     '',
     `Parâmetros: perfil \`${config.profile}\`, canal \`${config.channel}\`, ${config.apiInstances} api / ${config.workerInstances} worker, ${config.wallets} wallets, ${percent(config.hotShare)} na wallet quente, replays ${percent(config.replayShare)}, taxa ${config.rate}/s, pico ${config.spikeRate}/s, aquecimento ${config.warmupSeconds} s, duração ${config.durationSeconds} s, pool ${config.dbPoolSize}, log \`${config.logLevel}\`. Janela medida: ${decimal(result.measuredSeconds)} s.`,
+    ...(config.seedWallets > 0
+      ? [
+          '',
+          `Base semeada: ${config.seedWallets} wallets com ${config.seedOperations} operações cada${config.seedHotEntries > 0 ? `, mais uma wallet quente com ${config.seedHotEntries} operações` : ''}; eventos publicados na outbox: ${config.seedEvents ? 'sim' : 'não'}. O tráfego sorteia ${config.wallets} dessas wallets.`,
+        ]
+      : []),
     '',
   ];
   if (result.http !== undefined && result.steps === undefined) {

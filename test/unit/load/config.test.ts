@@ -89,8 +89,32 @@ describe('parseLoadArgs', () => {
       ['--profile', 'backlog', '--channel', 'sqs', '--subscribers', '1'],
       'backlog does not open streams',
     ],
+    [
+      ['--seed-wallets', '100', '--wallets', '200'],
+      'wallets must not exceed seedWallets',
+    ],
+    [['--seed-operations=-1'], 'seedOperations must be a non-negative integer'],
   ])('refuses %j', (argv, message) => {
     expect(() => parseLoadArgs(argv)).toThrow(message);
+  });
+
+  test('reads the seed flags', () => {
+    const [scenario] = parseLoadArgs([
+      '--seed-wallets',
+      '1000',
+      '--seed-operations',
+      '6',
+      '--seed-hot-entries',
+      '50',
+      '--seed-events',
+    ]).scenarios;
+
+    expect(scenario).toMatchObject({
+      seedWallets: 1000,
+      seedOperations: 6,
+      seedHotEntries: 50,
+      seedEvents: true,
+    });
   });
 
   test('every preset scenario is valid on its own', () => {
