@@ -72,6 +72,14 @@ describe('parseLoadArgs', () => {
       ['--profile', 'backlog', '--channel', 'http'],
       'backlog needs the sqs channel',
     ],
+    [
+      ['--profile', 'publish', '--channel', 'sqs'],
+      'publish needs the http channel',
+    ],
+    [
+      ['--drain-timeout', '0'],
+      'drainTimeoutSeconds must be a positive integer',
+    ],
     [['--only', 'nothing'], 'No scenario matches --only nothing'],
   ])('refuses %j', (argv, message) => {
     expect(() => parseLoadArgs(argv)).toThrow(message);

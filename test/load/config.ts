@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
 
 export type Profile =
-  'sustained' | 'spike' | 'saturation' | 'backlog' | 'recovery';
+  'sustained' | 'spike' | 'saturation' | 'backlog' | 'publish' | 'recovery';
 export type Channel = 'http' | 'sqs' | 'mixed';
 
 export interface ScenarioConfig {
@@ -22,6 +22,7 @@ export interface ScenarioConfig {
   stepSeconds: number;
   backlogMessages: number;
   outageSeconds: number;
+  drainTimeoutSeconds: number;
   requestTimeoutMs: number;
   maxInFlight: number;
   maxErrorRate: number;
@@ -55,6 +56,7 @@ export const DEFAULT_SCENARIO: ScenarioConfig = {
   stepSeconds: 15,
   backlogMessages: 2000,
   outageSeconds: 10,
+  drainTimeoutSeconds: 300,
   requestTimeoutMs: 10_000,
   maxInFlight: 2000,
   maxErrorRate: 0.05,
@@ -85,6 +87,11 @@ export const PRESETS: Record<string, PresetScenario[]> = {
       profile: 'backlog',
       channel: 'sqs',
       backlogMessages: 200,
+    },
+    {
+      name: 'smoke-outbox-publish',
+      profile: 'publish',
+      backlogMessages: 500,
     },
     {
       name: 'smoke-mixed-sustained',
@@ -157,6 +164,17 @@ export const PRESETS: Record<string, PresetScenario[]> = {
       backlogMessages: 1000,
     },
     {
+      name: 'outbox-publish-1x1',
+      profile: 'publish',
+      backlogMessages: 20000,
+    },
+    {
+      name: 'outbox-publish-1x3',
+      profile: 'publish',
+      workerInstances: 3,
+      backlogMessages: 20000,
+    },
+    {
       name: 'mixed-sustained-3x3',
       channel: 'mixed',
       apiInstances: 3,
@@ -210,6 +228,7 @@ const OPTIONS = {
   'step-seconds': { type: 'string' },
   backlog: { type: 'string' },
   outage: { type: 'string' },
+  'drain-timeout': { type: 'string' },
   'timeout-ms': { type: 'string' },
   'max-in-flight': { type: 'string' },
   'max-error-rate': { type: 'string' },
@@ -234,6 +253,7 @@ const NUMERIC_FLAGS: ReadonlyArray<
   ['step-seconds', 'stepSeconds'],
   ['backlog', 'backlogMessages'],
   ['outage', 'outageSeconds'],
+  ['drain-timeout', 'drainTimeoutSeconds'],
   ['timeout-ms', 'requestTimeoutMs'],
   ['max-in-flight', 'maxInFlight'],
   ['max-error-rate', 'maxErrorRate'],
@@ -275,6 +295,7 @@ const PROFILES: readonly Profile[] = [
   'spike',
   'saturation',
   'backlog',
+  'publish',
   'recovery',
 ];
 const CHANNELS: readonly Channel[] = ['http', 'sqs', 'mixed'];
@@ -313,6 +334,7 @@ export function validateScenario(scenario: ScenarioConfig): ScenarioConfig {
     'durationSeconds',
     'stepSeconds',
     'backlogMessages',
+    'drainTimeoutSeconds',
     'requestTimeoutMs',
     'maxInFlight',
     'maxP99Ms',
@@ -338,6 +360,9 @@ export function validateScenario(scenario: ScenarioConfig): ScenarioConfig {
   }
   if (scenario.profile === 'backlog' && scenario.channel !== 'sqs') {
     throw new Error('backlog needs the sqs channel');
+  }
+  if (scenario.profile === 'publish' && scenario.channel !== 'http') {
+    throw new Error('publish needs the http channel');
   }
   return scenario;
 }

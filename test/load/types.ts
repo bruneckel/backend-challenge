@@ -50,6 +50,13 @@ export interface OutageResult {
   recoveredAfterMs: number | null;
 }
 
+export interface PublishResult {
+  operations: number;
+  events: number;
+  seconds: number;
+  throughput: number;
+}
+
 export interface Quantiles {
   p50?: number;
   p95?: number;
@@ -72,6 +79,7 @@ export interface ServerResult {
   maxOutboxAgeSeconds: number;
   maxOutboxPending: number;
   maxConnections: number;
+  publishedEvents: number;
 }
 
 export interface ConsistencyResult {
@@ -82,6 +90,8 @@ export interface ConsistencyResult {
   dlqDepth: number;
   unpublished: number;
   pendingReferences: number;
+  outboxEvents: number;
+  eventsDelivered: number;
 }
 
 export interface ScenarioResult {
@@ -91,6 +101,7 @@ export interface ScenarioResult {
   sqs?: SqsResult;
   steps?: StepResult[];
   outage?: OutageResult;
+  publish?: PublishResult;
   server: ServerResult;
   consistency: ConsistencyResult;
   generator: { cpuPercent: number };

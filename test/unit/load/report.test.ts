@@ -47,6 +47,7 @@ const result: ScenarioResult = {
     maxOutboxAgeSeconds: 1,
     maxOutboxPending: 40,
     maxConnections: 12,
+    publishedEvents: 1980,
   },
   consistency: {
     wallets: 201,
@@ -56,6 +57,8 @@ const result: ScenarioResult = {
     dlqDepth: 0,
     unpublished: 0,
     pendingReferences: 0,
+    outboxEvents: 1980,
+    eventsDelivered: 1980,
   },
   generator: { cpuPercent: 37.5 },
 };
@@ -134,5 +137,38 @@ describe('renderReport', () => {
     ]);
 
     expect(saturation).not.toContain('\n\n\n');
+  });
+
+  test('reports every outbox event delivered to the downstream consumer', () => {
+    expect(markdown).toContain('eventos entregues 1980 de 1980');
+  });
+
+  test('flags events that never reached the downstream consumer', () => {
+    const missing = renderReport(environment, [
+      {
+        ...result,
+        consistency: { ...result.consistency, eventsDelivered: 1900 },
+      },
+    ]);
+
+    expect(missing).toContain('| 10 | **80 eventos não entregues** |');
+  });
+
+  test('summarizes a publish scenario by the events published per second', () => {
+    const publish = renderReport(environment, [
+      {
+        ...result,
+        config: { ...result.config, name: 'outbox', profile: 'publish' },
+        http: undefined,
+        publish: { operations: 500, events: 1000, seconds: 2, throughput: 500 },
+      },
+    ]);
+
+    expect(publish).toContain(
+      '| outbox | publish | outbox | 1/1 | 200 (0%) | 500.0 |',
+    );
+    expect(publish).toContain(
+      '- Outbox: 500 operações geraram 1000 eventos, publicados em 2.0 s (500.0 eventos/s).',
+    );
   });
 });

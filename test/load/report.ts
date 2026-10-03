@@ -1,4 +1,4 @@
-import type { LatencySummary } from './stats';
+import { type LatencySummary, summarize } from './stats';
 import type {
   EnvironmentInfo,
   Quantiles,
@@ -23,11 +23,18 @@ function errorsOf(outcomes: Record<string, number>): number {
 }
 
 function verdict(result: ScenarioResult): string {
-  const { violations, drained } = result.consistency;
+  const { violations, drained, outboxEvents, eventsDelivered } =
+    result.consistency;
   if (violations.length > 0) {
     return `**${violations.length} ${violations.length === 1 ? 'violação' : 'violações'}**`;
   }
-  return drained ? 'ok' : '**não drenou**';
+  if (!drained) {
+    return '**não drenou**';
+  }
+  if (eventsDelivered < outboxEvents) {
+    return `**${outboxEvents - eventsDelivered} eventos não entregues**`;
+  }
+  return 'ok';
 }
 
 function bestStep(steps: readonly StepResult[]): StepResult | undefined {
@@ -45,6 +52,14 @@ interface Row {
 
 function rowsOf(result: ScenarioResult): Row[] {
   const rows: Row[] = [];
+  if (result.publish !== undefined) {
+    rows.push({
+      channel: 'outbox',
+      throughput: result.publish.throughput,
+      latency: summarize([]),
+      errors: 0,
+    });
+  }
   const best = result.steps === undefined ? undefined : bestStep(result.steps);
   if (best !== undefined) {
     rows.push({
@@ -115,6 +130,12 @@ function scenarioSection(result: ScenarioResult): string[] {
       '',
     );
   }
+  if (result.publish !== undefined) {
+    const publish = result.publish;
+    lines.push(
+      `- Outbox: ${publish.operations} operações geraram ${publish.events} eventos, publicados em ${decimal(publish.seconds)} s (${decimal(publish.throughput)} eventos/s).`,
+    );
+  }
   if (result.outage !== undefined) {
     const outage = result.outage;
     lines.push(
@@ -149,8 +170,8 @@ function scenarioSection(result: ScenarioResult): string[] {
       ([channel, value]) =>
         `- Processamento no servidor, ${channel} (p50 / p95 / p99, ms): ${quantiles(value)}.`,
     ),
-    `- Outbox: atraso de publicação (p50 / p95 / p99, ms) ${quantiles(server.outboxDelay)}; maior idade pendente ${decimal(server.maxOutboxAgeSeconds)} s; maior fila ${server.maxOutboxPending}. Conexões ao banco (máximo): ${server.maxConnections}.`,
-    `- Consistência: ${consistency.wallets} wallets conferidas; ${consistency.violations.length} violações; drenagem ${consistency.drained ? `em ${decimal(consistency.drainSeconds)} s` : 'incompleta'}; DLQ ${consistency.dlqDepth}; eventos não publicados ${consistency.unpublished}; referências pendentes ${consistency.pendingReferences}.`,
+    `- Outbox: atraso de publicação (p50 / p95 / p99, ms) ${quantiles(server.outboxDelay)}; maior idade pendente ${decimal(server.maxOutboxAgeSeconds)} s; maior fila ${server.maxOutboxPending}. Eventos publicados: ${server.publishedEvents}. Conexões ao banco (máximo): ${server.maxConnections}.`,
+    `- Consistência: ${consistency.wallets} wallets conferidas; ${consistency.violations.length} violações; drenagem ${consistency.drained ? `em ${decimal(consistency.drainSeconds)} s` : 'incompleta'}; DLQ ${consistency.dlqDepth}; eventos não publicados ${consistency.unpublished}; eventos entregues ${consistency.eventsDelivered} de ${consistency.outboxEvents}; referências pendentes ${consistency.pendingReferences}.`,
     ...consistency.violations.map((violation) => `  - ${violation}`),
     `- Gerador: CPU ${decimal(result.generator.cpuPercent)}% de um núcleo.`,
     '',

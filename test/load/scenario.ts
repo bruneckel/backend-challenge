@@ -10,15 +10,20 @@ import {
   startApp,
 } from './cluster';
 import {
+  EventSink,
   Sampler,
   consistencyOf,
+  outboxEvents,
   processedAt,
+  publishSpanSeconds,
   scrape,
   serverResult,
+  unpublishedEvents,
   waitForDrain,
 } from './collectors';
 import type { ScenarioConfig } from './config';
 import { pauseDatabase, resumeDatabase } from './infra';
+import type { Sample } from './prometheus';
 import {
   type RatePhase,
   arrivalOffsets,
@@ -37,13 +42,13 @@ import {
 import type {
   HttpResult,
   OutageResult,
+  PublishResult,
   ScenarioResult,
   SqsResult,
   StepResult,
 } from './types';
 
 const INITIAL_BALANCE = '1000000.00';
-const DRAIN_TIMEOUT_MS = 180_000;
 const MAX_PENDING_BATCHES = 64;
 
 const log = (message: string) =>
@@ -366,6 +371,9 @@ export async function runScenario(
   keepData: boolean,
 ): Promise<ScenarioResult> {
   const storage = await createStorage(id);
+  const sink = new EventSink(storage);
+  sink.start();
+  const drainTimeoutMs = config.drainTimeoutSeconds * 1000;
   const environment = {
     ...storage.environment,
     LOG_LEVEL: config.logLevel,
@@ -405,12 +413,14 @@ export async function runScenario(
     log(`  ${config.wallets + 1} wallets opened`);
 
     const sampler = new Sampler(() => context.workers, storage);
-    let before: Awaited<ReturnType<typeof scrape>>;
+    let before: Sample[] = [];
+    let measuredSeconds = 0;
     let http: HttpResult | undefined;
     let sqs: SqsResult | undefined;
     let steps: StepResult[] | undefined;
     let outage: OutageResult | undefined;
-    let measuredSeconds: number;
+    let publish: PublishResult | undefined;
+    let drain: { drained: boolean; seconds: number };
     const cpuAtStart = process.cpuUsage();
     const wallAtStart = performance.now();
 
@@ -433,118 +443,140 @@ export async function runScenario(
       sampler.start();
       const started = performance.now();
       await startWorkers();
-      const drain = await waitForDrain(storage, DRAIN_TIMEOUT_MS);
+      drain = await waitForDrain(storage, drainTimeoutMs);
       measuredSeconds = (performance.now() - started) / 1000;
       sqs = await sqsResult(storage, recorder, measuredSeconds, true);
-      return await finish(drain);
-    }
-
-    await startWorkers();
-    if (config.warmupSeconds > 0) {
-      if (config.profile === 'saturation') {
-        await runClosedLoop(
-          config.concurrencySteps[0]!,
-          config.warmupSeconds * 1000,
-          async () => {
-            await submit(
-              apis[0]!.url,
-              context.factory.next(),
-              config.requestTimeoutMs,
-            );
-          },
-        );
-      } else {
-        await driveOpen(
-          context,
-          [{ durationSeconds: config.warmupSeconds, rate: config.rate }],
-          undefined,
-          undefined,
-        );
-      }
-      await waitForDrain(storage, DRAIN_TIMEOUT_MS);
-      log('  warm-up done');
-    }
-    before = await scrape([...apis, ...context.workers]);
-    sampler.start();
-
-    if (config.profile === 'saturation') {
-      const saturation = await saturate(context);
-      steps = saturation.steps;
-      measuredSeconds = saturation.seconds;
-    } else {
-      const httpRecorder = new HttpRecorder(performance.now());
-      const sqsRecorder = new SqsRecorder();
-      const levels = levelsOf(config);
-      let pausedAt = 0;
-      let resumedAt = 0;
-      const outageRun =
-        config.profile === 'recovery'
-          ? (async () => {
-              await Bun.sleep((config.durationSeconds * 1000) / 3);
-              pausedAt = performance.now();
-              await pauseDatabase();
-              log('  PostgreSQL paused');
-              try {
-                await Bun.sleep(config.outageSeconds * 1000);
-              } finally {
-                await resumeDatabase();
-                resumedAt = performance.now();
-                log('  PostgreSQL resumed');
-              }
-            })()
-          : Promise.resolve();
-      const [offered] = await Promise.all([
-        driveOpen(context, levels, httpRecorder, sqsRecorder),
-        outageRun,
-      ]);
-      measuredSeconds = levels.reduce(
-        (total, level) => total + level.durationSeconds,
-        0,
-      );
-      if (offered > 0) {
-        http = httpRecorder.result(offered, measuredSeconds);
-      }
-      if (config.profile === 'recovery' && offered > 0) {
-        outage = outageOf(
-          httpRecorder,
-          pausedAt,
-          resumedAt,
-          split(config, config.rate).http,
-        );
-      }
-      const drain = await waitForDrain(storage, DRAIN_TIMEOUT_MS);
-      if (sqsRecorder.sentAt.size > 0) {
-        sqs = await sqsResult(storage, sqsRecorder, measuredSeconds, false);
-      }
-      return await finish(drain);
-    }
-    const drain = await waitForDrain(storage, DRAIN_TIMEOUT_MS);
-    return await finish(drain);
-
-    async function finish(drain: {
-      drained: boolean;
-      seconds: number;
-    }): Promise<ScenarioResult> {
-      const cpu = process.cpuUsage(cpuAtStart);
-      const wallMs = performance.now() - wallAtStart;
-      sampler.stop();
-      const after = await scrape([...apis, ...context.workers]);
-      return {
-        config,
-        measuredSeconds,
-        http,
-        sqs,
-        steps,
-        outage,
-        server: serverResult(before, after, sampler),
-        consistency: await consistencyOf(storage, drain),
-        generator: {
-          cpuPercent: ((cpu.user + cpu.system) / 1000 / wallMs) * 100,
+    } else if (config.profile === 'publish') {
+      let turn = 0;
+      await runConcurrently(
+        Array.from({ length: config.backlogMessages }, (_, index) => index),
+        32,
+        async () => {
+          await submit(
+            apis[turn++ % apis.length]!.url,
+            context.factory.next(),
+            config.requestTimeoutMs,
+          );
         },
+      );
+      const events = await unpublishedEvents(storage);
+      log(`  ${config.backlogMessages} operations left ${events} events`);
+      before = await scrape(apis);
+      sampler.start();
+      const started = performance.now();
+      await startWorkers();
+      drain = await waitForDrain(storage, drainTimeoutMs);
+      measuredSeconds = (performance.now() - started) / 1000;
+      const seconds = await publishSpanSeconds(storage);
+      publish = {
+        operations: config.backlogMessages,
+        events,
+        seconds,
+        throughput: events / seconds,
       };
+    } else {
+      await startWorkers();
+      if (config.warmupSeconds > 0) {
+        if (config.profile === 'saturation') {
+          await runClosedLoop(
+            config.concurrencySteps[0]!,
+            config.warmupSeconds * 1000,
+            async () => {
+              await submit(
+                apis[0]!.url,
+                context.factory.next(),
+                config.requestTimeoutMs,
+              );
+            },
+          );
+        } else {
+          await driveOpen(
+            context,
+            [{ durationSeconds: config.warmupSeconds, rate: config.rate }],
+            undefined,
+            undefined,
+          );
+        }
+        await waitForDrain(storage, drainTimeoutMs);
+        log('  warm-up done');
+      }
+      before = await scrape([...apis, ...context.workers]);
+      sampler.start();
+      if (config.profile === 'saturation') {
+        const saturation = await saturate(context);
+        steps = saturation.steps;
+        measuredSeconds = saturation.seconds;
+        drain = await waitForDrain(storage, drainTimeoutMs);
+      } else {
+        const httpRecorder = new HttpRecorder(performance.now());
+        const sqsRecorder = new SqsRecorder();
+        const levels = levelsOf(config);
+        let pausedAt = 0;
+        let resumedAt = 0;
+        const outageRun =
+          config.profile === 'recovery'
+            ? (async () => {
+                await Bun.sleep((config.durationSeconds * 1000) / 3);
+                pausedAt = performance.now();
+                await pauseDatabase();
+                log('  PostgreSQL paused');
+                try {
+                  await Bun.sleep(config.outageSeconds * 1000);
+                } finally {
+                  await resumeDatabase();
+                  resumedAt = performance.now();
+                  log('  PostgreSQL resumed');
+                }
+              })()
+            : Promise.resolve();
+        const [offered] = await Promise.all([
+          driveOpen(context, levels, httpRecorder, sqsRecorder),
+          outageRun,
+        ]);
+        measuredSeconds = levels.reduce(
+          (total, level) => total + level.durationSeconds,
+          0,
+        );
+        if (offered > 0) {
+          http = httpRecorder.result(offered, measuredSeconds);
+        }
+        if (config.profile === 'recovery' && offered > 0) {
+          outage = outageOf(
+            httpRecorder,
+            pausedAt,
+            resumedAt,
+            split(config, config.rate).http,
+          );
+        }
+        drain = await waitForDrain(storage, drainTimeoutMs);
+        if (sqsRecorder.sentAt.size > 0) {
+          sqs = await sqsResult(storage, sqsRecorder, measuredSeconds, false);
+        }
+      }
     }
+
+    const cpu = process.cpuUsage(cpuAtStart);
+    const wallMs = performance.now() - wallAtStart;
+    sampler.stop();
+    const after = await scrape([...apis, ...context.workers]);
+    await sink.catchUp(await outboxEvents(storage), 60_000);
+    return {
+      config,
+      measuredSeconds,
+      http,
+      sqs,
+      steps,
+      outage,
+      publish,
+      server: serverResult(before, after, sampler),
+      consistency: await consistencyOf(storage, drain, sink),
+      generator: {
+        cpuPercent: ((cpu.user + cpu.system) / 1000 / wallMs) * 100,
+      },
+    };
   } finally {
     await Promise.allSettled(processes.map((app) => app.stop()));
+    await sink.stop();
     await storage.dispose(keepData);
   }
 }

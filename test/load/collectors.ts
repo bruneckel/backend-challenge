@@ -1,3 +1,7 @@
+import {
+  DeleteMessageBatchCommand,
+  ReceiveMessageCommand,
+} from '@aws-sdk/client-sqs';
 import { inconsistentWallets } from '@test/support/invariants';
 import { queueDepth } from '@test/support/sqs';
 import type { AppProcess, Storage } from './cluster';
@@ -140,6 +144,7 @@ export function serverResult(
     maxOutboxAgeSeconds: sampler.maxOutboxAgeSeconds,
     maxOutboxPending: sampler.maxOutboxPending,
     maxConnections: sampler.maxConnections,
+    publishedEvents: sumOf(delta, 'outbox_publish_delay_seconds_count'),
   };
 }
 
@@ -148,7 +153,7 @@ async function count(storage: Storage, query: string): Promise<number> {
   return (row as { count: number } | undefined)?.count ?? 0;
 }
 
-const unpublishedEvents = (storage: Storage) =>
+export const unpublishedEvents = (storage: Storage) =>
   count(
     storage,
     'select count(*)::int as count from outbox_messages where published_at is null',
@@ -182,17 +187,29 @@ export async function waitForDrain(
   }
 }
 
+export async function publishSpanSeconds(storage: Storage): Promise<number> {
+  const [row] = await storage.sql.unsafe(
+    'select extract(epoch from max(published_at) - min(published_at))::float8 as seconds from outbox_messages',
+  );
+  return Number((row as { seconds: number | null } | undefined)?.seconds ?? 0);
+}
+
+export const outboxEvents = (storage: Storage) =>
+  count(storage, 'select count(*)::int as count from outbox_messages');
+
 export async function consistencyOf(
   storage: Storage,
   drain: { drained: boolean; seconds: number },
+  sink: EventSink,
 ): Promise<ConsistencyResult> {
-  const [wallets, violations, dlqDepth, unpublished, pending] =
+  const [wallets, violations, dlqDepth, unpublished, pending, events] =
     await Promise.all([
       count(storage, 'select count(*)::int as count from wallets'),
       inconsistentWallets(storage.sql),
       queueDepth(storage.sqs, storage.queues.deadLetter),
       unpublishedEvents(storage),
       pendingReferences(storage),
+      outboxEvents(storage),
     ]);
   return {
     wallets,
@@ -202,7 +219,76 @@ export async function consistencyOf(
     dlqDepth,
     unpublished,
     pendingReferences: pending,
+    outboxEvents: events,
+    eventsDelivered: sink.delivered,
   };
+}
+
+export class EventSink {
+  private readonly eventIds = new Set<string>();
+  private running = false;
+  private loops: Promise<void>[] = [];
+
+  constructor(private readonly storage: Storage) {}
+
+  get delivered(): number {
+    return this.eventIds.size;
+  }
+
+  start(receivers = 8): void {
+    this.running = true;
+    this.loops = Array.from({ length: receivers }, () => this.receive());
+  }
+
+  async catchUp(expected: number, timeoutMs: number): Promise<void> {
+    const deadline = performance.now() + timeoutMs;
+    while (this.delivered < expected && performance.now() < deadline) {
+      await Bun.sleep(100);
+    }
+  }
+
+  async stop(): Promise<void> {
+    this.running = false;
+    await Promise.all(this.loops);
+  }
+
+  private async receive(): Promise<void> {
+    const QueueUrl = this.storage.queues.events;
+    while (this.running) {
+      try {
+        const { Messages = [] } = await this.storage.sqs.send(
+          new ReceiveMessageCommand({
+            QueueUrl,
+            MaxNumberOfMessages: 10,
+            WaitTimeSeconds: 1,
+            VisibilityTimeout: 60,
+          }),
+        );
+        if (Messages.length === 0) {
+          continue;
+        }
+        for (const message of Messages) {
+          const { eventId } = JSON.parse(message.Body ?? '{}') as {
+            eventId?: string;
+          };
+          if (eventId !== undefined) {
+            this.eventIds.add(eventId);
+          }
+        }
+        await this.storage.sqs.send(
+          new DeleteMessageBatchCommand({
+            QueueUrl,
+            Entries: Messages.map((message, index) => ({
+              Id: String(index),
+              ReceiptHandle: message.ReceiptHandle,
+            })),
+          }),
+        );
+      } catch {
+        await Bun.sleep(100);
+      }
+    }
+  }
 }
 
 export async function processedAt(
