@@ -1,9 +1,9 @@
-import { uuidV7LowerBound } from '@platform/ids/uuid-v7-bound';
 import { LockMode } from '@mikro-orm/core';
 import type { EntityManager } from '@mikro-orm/postgresql';
 import type { OutboxRepository } from '@messaging/application/ports/outbox-repository';
 import type { PurgedBatch } from '@messaging/application/ports/purged-batch';
 import type { OutboxMessage } from '@messaging/domain/outbox-message';
+import { uuidV7LowerBound } from '@platform/ids/uuid-v7-bound';
 import {
   OutboxMessageRecord,
   toOutboxDelivery,
