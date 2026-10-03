@@ -74,8 +74,8 @@ const COUNTERS: Record<CounterName, Definition> = {
     labelNames: ['result'],
   },
   wallet_reconciliation_divergences_total: {
-    help: 'Wallet reconciliations that found the stored balance differing from the ledger',
-    labelNames: [],
+    help: 'Divergences found by wallet reconciliations: balance, ledger chain or version',
+    labelNames: ['kind'],
   },
   wallet_events_streamed_total: {
     help: 'Ledger entries written to wallet event streams',

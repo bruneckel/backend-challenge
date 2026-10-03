@@ -350,6 +350,8 @@ describe('POST /wallets/:walletId/reconciliation', () => {
       difference: brl('0.00'),
       consistent: true,
       checkedEntries: 2,
+      chainBreaks: 0,
+      versionConsistent: true,
     });
   });
 

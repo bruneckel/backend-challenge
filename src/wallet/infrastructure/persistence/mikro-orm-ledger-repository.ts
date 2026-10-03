@@ -16,18 +16,37 @@ import {
 interface ReconciliationRow {
   currency: string;
   stored: string;
+  version: number;
   credits: string;
   debits: string;
   entries: number;
+  first_version: number | null;
+  last_version: number | null;
+  chain_breaks: number;
 }
 
 const RECONCILIATION_SQL = `
-  select w.currency, w.balance_amount::text as stored,
-    coalesce(sum(l.amount) filter (where l.direction = 'CREDIT'), 0.00)::text as credits,
-    coalesce(sum(l.amount) filter (where l.direction = 'DEBIT'), 0.00)::text as debits,
-    count(l.id)::int as entries
+  with chain as (
+    select wallet_version, direction, amount, balance_before,
+      lag(balance_after) over (order by wallet_version) as previous_after,
+      lag(wallet_version) over (order by wallet_version) as previous_version
+    from wallet_ledger_entries
+    where wallet_id = ?
+  )
+  select w.currency, w.balance_amount::text as stored, w.version,
+    coalesce(sum(c.amount) filter (where c.direction = 'CREDIT'), 0.00)::text as credits,
+    coalesce(sum(c.amount) filter (where c.direction = 'DEBIT'), 0.00)::text as debits,
+    count(c.wallet_version)::int as entries,
+    min(c.wallet_version) as first_version,
+    max(c.wallet_version) as last_version,
+    count(*) filter (
+      where (c.previous_version is null and c.balance_before <> 0)
+         or (c.previous_version is not null
+             and (c.balance_before <> c.previous_after
+                  or c.wallet_version <> c.previous_version + 1))
+    )::int as chain_breaks
   from wallets w
-  left join wallet_ledger_entries l on l.wallet_id = w.id
+  left join chain c on true
   where w.id = ?
   group by w.id`;
 
@@ -102,7 +121,7 @@ export class MikroOrmLedgerRepository implements LedgerRepository {
   ): Promise<ReconciliationSnapshot | null> {
     const [row] = await this.em.execute<ReconciliationRow[]>(
       RECONCILIATION_SQL,
-      [walletId],
+      [walletId, walletId],
     );
     if (row === undefined) {
       return null;
@@ -111,9 +130,13 @@ export class MikroOrmLedgerRepository implements LedgerRepository {
       Money.from({ amount, currency: row.currency });
     return {
       storedBalance: money(row.stored),
+      storedVersion: row.version,
       credits: money(row.credits),
       debits: money(row.debits),
       entries: row.entries,
+      firstEntryVersion: row.first_version,
+      lastEntryVersion: row.last_version,
+      chainBreaks: row.chain_breaks,
     };
   }
 }
