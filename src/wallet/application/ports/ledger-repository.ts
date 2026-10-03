@@ -19,6 +19,11 @@ export interface LedgerRepository {
     walletId: string,
     request: LedgerPageRequest,
   ): Promise<WalletLedgerEntry[]>;
+  after(
+    walletId: string,
+    afterVersion: number,
+    limit: number,
+  ): Promise<WalletLedgerEntry[]>;
   reconciliationSnapshot(
     walletId: string,
   ): Promise<ReconciliationSnapshot | null>;

@@ -48,6 +48,39 @@ describe('MikroOrmLedgerRepository', () => {
     );
   });
 
+  test('reads the entries after a wallet version, oldest first', async () => {
+    const opened = openedWallet('100.00');
+    await harness.unitOfWork.run((scope) => storeOpenedWallet(scope, opened));
+    const second = settledBet(opened.wallet, '10.00');
+    const third = settledBet(opened.wallet, '20.00');
+    await harness.unitOfWork.run(async ({ transactions, ledger }) => {
+      for (const { bet, entry } of [second, third]) {
+        await transactions.insert(bet);
+        await ledger.append(entry);
+      }
+    });
+    const after = (version: number, limit: number) =>
+      harness.unitOfWork.run(({ ledger }) =>
+        ledger.after(opened.wallet.id, version, limit),
+      );
+
+    const all = await after(0, 10);
+    const next = await after(1, 1);
+    const none = await after(3, 10);
+
+    expect(plain(all.map((entry) => entry.toState()))).toEqual(
+      plain([
+        opened.openingEntry!.toState(),
+        second.entry.toState(),
+        third.entry.toState(),
+      ]),
+    );
+    expect(plain(next.map((entry) => entry.toState()))).toEqual(
+      plain([second.entry.toState()]),
+    );
+    expect(none).toEqual([]);
+  });
+
   test('returns an empty page for a wallet opened with a zero balance', async () => {
     const opened = openedWallet('0.00');
     await harness.unitOfWork.run((scope) => storeOpenedWallet(scope, opened));

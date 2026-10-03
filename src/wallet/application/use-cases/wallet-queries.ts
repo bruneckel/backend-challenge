@@ -5,6 +5,7 @@ import {
 } from '@wallet/application/errors';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
 import {
+  type LedgerEntryView,
   type LedgerPage,
   type TransactionView,
   type WalletView,
@@ -54,6 +55,26 @@ export class WalletQueries {
             : null,
       };
     });
+  }
+
+  getLedgerAfter(
+    walletId: string,
+    afterVersion: number,
+    limit: number,
+  ): Promise<LedgerEntryView[]> {
+    return this.deps.unitOfWork.run(async ({ ledger }) =>
+      (await ledger.after(walletId, afterVersion, limit)).map(
+        toLedgerEntryView,
+      ),
+    );
+  }
+
+  getWalletVersions(
+    walletIds: readonly string[],
+  ): Promise<ReadonlyMap<string, number>> {
+    return this.deps.unitOfWork.run(({ wallets }) =>
+      wallets.versionsOf(walletIds),
+    );
   }
 
   getTransaction(transactionId: string): Promise<TransactionView> {

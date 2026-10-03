@@ -71,6 +71,33 @@ describe('MikroOrmWalletRepository', () => {
     ).toBeNull();
   });
 
+  test('reads the current version of several wallets at once', async () => {
+    const untouched = await stored();
+    const moved = await stored();
+    await harness.unitOfWork.run(async ({ wallets }) => {
+      const locked = await wallets.lockForUpdate(moved.id);
+      locked!.debit(money('10.00'), movement());
+      await wallets.applyBalanceChange(locked!, 1);
+    });
+
+    const versions = await harness.unitOfWork.run(({ wallets }) =>
+      wallets.versionsOf([untouched.id, moved.id, Bun.randomUUIDv7()]),
+    );
+
+    expect(Object.fromEntries(versions)).toEqual({
+      [untouched.id]: 1,
+      [moved.id]: 2,
+    });
+  });
+
+  test('reads no versions for an empty list', async () => {
+    const versions = await harness.unitOfWork.run(({ wallets }) =>
+      wallets.versionsOf([]),
+    );
+
+    expect(versions.size).toBe(0);
+  });
+
   test('finds the wallet of a player by currency', async () => {
     const wallet = await stored();
 

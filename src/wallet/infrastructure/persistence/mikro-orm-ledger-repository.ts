@@ -55,6 +55,23 @@ export class MikroOrmLedgerRepository implements LedgerRepository {
     return rows.map(toLedgerEntry);
   }
 
+  async after(
+    walletId: string,
+    afterVersion: number,
+    limit: number,
+  ): Promise<WalletLedgerEntry[]> {
+    const rows = await this.em.find(
+      LedgerEntryRecord,
+      { walletId, walletVersion: { $gt: afterVersion } },
+      {
+        orderBy: { walletVersion: 'asc' },
+        limit,
+        disableIdentityMap: true,
+      },
+    );
+    return rows.map(toLedgerEntry);
+  }
+
   async reconciliationSnapshot(
     walletId: string,
   ): Promise<ReconciliationSnapshot | null> {
