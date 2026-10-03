@@ -70,6 +70,11 @@ describe('loadConfig', () => {
         jwksTimeoutMs: 5000,
         clockSkewSeconds: 5,
       },
+      streams: {
+        maxStreams: 1000,
+        sweepIntervalMs: 500,
+        heartbeatIntervalMs: 15000,
+      },
     });
   });
 
@@ -121,6 +126,9 @@ describe('loadConfig', () => {
       AUTH_JWKS_URL: 'http://keycloak:8080/realms/wagering/certs',
       AUTH_JWKS_TIMEOUT_MS: '2500',
       AUTH_CLOCK_SKEW_SECONDS: '0',
+      STREAM_MAX_STREAMS: '50',
+      STREAM_SWEEP_INTERVAL_MS: '250',
+      STREAM_HEARTBEAT_INTERVAL_MS: '5000',
     });
 
     expect(config).toEqual({
@@ -186,6 +194,11 @@ describe('loadConfig', () => {
         jwksTimeoutMs: 2500,
         clockSkewSeconds: 0,
       },
+      streams: {
+        maxStreams: 50,
+        sweepIntervalMs: 250,
+        heartbeatIntervalMs: 5000,
+      },
     });
   });
 
@@ -245,6 +258,16 @@ describe('loadConfig', () => {
       'an audience with spaces',
       { AUTH_AUDIENCE: 'wagering api' },
       /AUTH_AUDIENCE/,
+    ],
+    [
+      'a stream sweep faster than 10 ms',
+      { STREAM_SWEEP_INTERVAL_MS: '5' },
+      /STREAM_SWEEP_INTERVAL_MS/,
+    ],
+    [
+      'a stream heartbeat faster than one second',
+      { STREAM_HEARTBEAT_INTERVAL_MS: '999' },
+      /STREAM_HEARTBEAT_INTERVAL_MS/,
     ],
     [
       'a clock skew above five minutes',

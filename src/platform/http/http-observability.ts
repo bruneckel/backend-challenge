@@ -11,10 +11,16 @@ interface ObservedRequest {
 
 interface ObservedResponse {
   statusCode: number;
+  getHeader(name: string): unknown;
   on(event: 'finish', listener: () => void): unknown;
 }
 
 const QUIET_PREFIXES = ['/health', '/metrics'];
+
+const isEventStream = (response: ObservedResponse) =>
+  String(response.getHeader('content-type') ?? '').startsWith(
+    'text/event-stream',
+  );
 
 function routeOf(request: ObservedRequest): string {
   const path = request.route?.path;
@@ -40,11 +46,13 @@ export function httpObservability(metrics: Metrics, logger: Logger) {
       AsyncResource.bind(() => {
         const seconds = (performance.now() - started) / 1000;
         const route = routeOf(request);
-        metrics.observe('http_request_duration_seconds', seconds, {
-          method: request.method,
-          route,
-          status: String(response.statusCode),
-        });
+        if (!isEventStream(response)) {
+          metrics.observe('http_request_duration_seconds', seconds, {
+            method: request.method,
+            route,
+            status: String(response.statusCode),
+          });
+        }
         logger.info('http request completed', {
           method: request.method,
           route,

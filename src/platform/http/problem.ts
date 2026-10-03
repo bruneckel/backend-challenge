@@ -122,6 +122,12 @@ const PROBLEM_TYPES: Readonly<Record<string, ProblemType>> = {
     title: 'The request body is too large',
     retryable: false,
   },
+  STREAM_CAPACITY_EXCEEDED: {
+    status: 503,
+    title: 'This instance has no room for another event stream',
+    retryable: true,
+    headers: { 'retry-after': '5' },
+  },
   INTERNAL_ERROR: {
     status: 500,
     title: 'Unexpected error; nothing was committed',

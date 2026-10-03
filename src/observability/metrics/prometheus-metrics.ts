@@ -77,6 +77,10 @@ const COUNTERS: Record<CounterName, Definition> = {
     help: 'Wallet reconciliations that found the stored balance differing from the ledger',
     labelNames: [],
   },
+  wallet_events_streamed_total: {
+    help: 'Ledger entries written to wallet event streams',
+    labelNames: [],
+  },
 };
 
 const GAUGES: Record<GaugeName, Definition> = {
@@ -94,6 +98,10 @@ const GAUGES: Record<GaugeName, Definition> = {
   },
   outbox_oldest_pending_age_seconds: {
     help: 'Age of the oldest outbox event not yet published',
+    labelNames: [],
+  },
+  wallet_event_streams: {
+    help: 'Wallet event streams open on this instance',
     labelNames: [],
   },
 };
@@ -118,6 +126,11 @@ const HISTOGRAMS: Record<HistogramName, HistogramDefinition> = {
     help: 'HTTP request duration, by method, route and status',
     labelNames: ['method', 'route', 'status'],
     buckets: LATENCY_BUCKETS,
+  },
+  wallet_event_delivery_seconds: {
+    help: 'Time between a ledger entry being written and reaching an event stream',
+    labelNames: [],
+    buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
   },
 };
 

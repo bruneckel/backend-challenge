@@ -12,19 +12,22 @@ export type CounterName =
   | 'db_deadlocks_total'
   | 'wallet_version_conflicts_total'
   | 'wallet_reconciliations_total'
-  | 'wallet_reconciliation_divergences_total';
+  | 'wallet_reconciliation_divergences_total'
+  | 'wallet_events_streamed_total';
 
 export type GaugeName =
   | 'pending_reference_transactions'
   | 'sqs_dlq_approximate_messages'
   | 'outbox_pending_events'
-  | 'outbox_oldest_pending_age_seconds';
+  | 'outbox_oldest_pending_age_seconds'
+  | 'wallet_event_streams';
 
 export type HistogramName =
   | 'wallet_lock_wait_seconds'
   | 'outbox_publish_delay_seconds'
   | 'wager_processing_duration_seconds'
-  | 'http_request_duration_seconds';
+  | 'http_request_duration_seconds'
+  | 'wallet_event_delivery_seconds';
 
 export type MetricLabels = Readonly<Record<string, string>>;
 
