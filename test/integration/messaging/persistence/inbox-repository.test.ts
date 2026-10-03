@@ -140,11 +140,12 @@ describe('MikroOrmInboxRepository', () => {
 
   test('saves when the message was processed and the transaction it produced', async () => {
     const opened = openedWallet('100.00');
-    const { bet } = settledBet(opened.wallet);
+    const { bet, entry } = settledBet(opened.wallet);
     const message = received();
     await harness.unitOfWork.run(async (scope) => {
       await storeOpenedWallet(scope, opened);
       await scope.transactions.insert(bet);
+      await scope.ledger.append(entry);
       await scope.inbox.record(message);
       message.markProcessed(LATER);
       await scope.inbox.saveProcessed(message, bet.id);

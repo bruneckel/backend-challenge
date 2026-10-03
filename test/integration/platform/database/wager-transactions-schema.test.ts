@@ -32,6 +32,8 @@ const NULLABLE_COLUMNS = [
   'next_reference_attempt_at',
 ];
 
+const OPENED = { amount: '100.00', result_balance_amount: '100.00' };
+
 let database: TestDatabase;
 let wallet: Row;
 
@@ -45,7 +47,7 @@ afterAll(async () => {
 });
 
 async function storedWallet(overrides: Row = {}): Promise<Row> {
-  const row = walletRow(overrides);
+  const row = walletRow({ balance_amount: '0.00', ...overrides });
   await insertRow(database.sql, 'wallets', row);
   return row;
 }
@@ -114,7 +116,7 @@ describe('wager_transactions shapes', () => {
   test('accepts the internal OPENING of a wallet', async () => {
     const fresh = await storedWallet();
 
-    await insertTransaction(transactionRow(fresh, openingOf(fresh)));
+    await insertTransaction(transactionRow(fresh, openingOf(fresh, OPENED)));
   });
 
   test.each(requiredColumns(transactionRow(walletRow()), NULLABLE_COLUMNS))(
@@ -546,11 +548,12 @@ describe('wager_transactions uniqueness', () => {
 
   test('refuses a second OPENING for the same wallet', async () => {
     const fresh = await storedWallet();
-    await insertTransaction(transactionRow(fresh, openingOf(fresh)));
+    await insertTransaction(transactionRow(fresh, openingOf(fresh, OPENED)));
 
     const second = transactionRow(
       fresh,
       openingOf(fresh, {
+        ...OPENED,
         external_transaction_id: 'opening:again',
         idempotency_key: 'opening:again',
       }),

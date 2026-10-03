@@ -8,6 +8,7 @@ import {
   nullViolationOf,
   violationOf,
 } from '@test/support/database';
+import { storeWallet } from '@test/support/ledger-states';
 import { requiredColumns, walletRow } from '@test/support/schema-rows';
 
 let database: TestDatabase;
@@ -24,9 +25,9 @@ const insertWallet = (row: Row) => insertRow(database.sql, 'wallets', row);
 
 describe('wallets table', () => {
   test('stores the balance as an exact decimal string up to the magnitude limit', async () => {
-    const wallet = walletRow({ balance_amount: '99999999999999999.99' });
-
-    await insertWallet(wallet);
+    const wallet = await storeWallet(database.sql, {
+      balance_amount: '99999999999999999.99',
+    });
 
     const [stored] =
       await database.sql`select balance_amount::text as balance_amount from wallets where id = ${wallet.id}`;
@@ -74,8 +75,7 @@ describe('wallets table', () => {
   });
 
   test('refuses a second wallet with the same id', async () => {
-    const wallet = walletRow();
-    await insertWallet(wallet);
+    const wallet = await storeWallet(database.sql);
 
     expect(
       await violationOf(
@@ -88,8 +88,7 @@ describe('wallets table', () => {
   });
 
   test('keeps a single wallet per player and currency', async () => {
-    const wallet = walletRow();
-    await insertWallet(wallet);
+    const wallet = await storeWallet(database.sql);
 
     expect(
       await violationOf(
@@ -102,12 +101,12 @@ describe('wallets table', () => {
   });
 
   test('lets a player hold wallets in different currencies', async () => {
-    const wallet = walletRow();
-    await insertWallet(wallet);
+    const wallet = await storeWallet(database.sql);
 
-    await insertWallet(
-      walletRow({ player_id: wallet.player_id, currency: 'USD' }),
-    );
+    await storeWallet(database.sql, {
+      player_id: wallet.player_id,
+      currency: 'USD',
+    });
 
     const [{ count }] =
       await database.sql`select count(*)::int as count from wallets where player_id = ${wallet.player_id}`;

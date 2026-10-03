@@ -69,7 +69,7 @@ async function setting(em: EntityManager, name: string): Promise<unknown> {
 
 describe('MikroOrmUnitOfWork', () => {
   test('commits the work and returns its result', async () => {
-    const wallet = walletRow();
+    const wallet = walletRow({ balance_amount: '0.00' });
 
     const result = await unitOfWork.run(async ({ em }) => {
       await insertWallet(em, wallet);
@@ -81,7 +81,7 @@ describe('MikroOrmUnitOfWork', () => {
   });
 
   test('rolls back every write and rethrows when the work fails', async () => {
-    const wallet = walletRow();
+    const wallet = walletRow({ balance_amount: '0.00' });
     const failure = new Error('boom');
 
     const run = unitOfWork.run(async ({ em }) => {
@@ -94,8 +94,8 @@ describe('MikroOrmUnitOfWork', () => {
   });
 
   test('keeps concurrent units of work in separate transactions', async () => {
-    const committed = walletRow();
-    const rolledBack = walletRow();
+    const committed = walletRow({ balance_amount: '0.00' });
+    const rolledBack = walletRow({ balance_amount: '0.00' });
 
     const results = await Promise.allSettled([
       unitOfWork.run(async ({ em }) => {
@@ -131,7 +131,7 @@ describe('MikroOrmUnitOfWork', () => {
   });
 
   test('refuses to start inside another unit of work and rolls the outer one back', async () => {
-    const wallet = walletRow();
+    const wallet = walletRow({ balance_amount: '0.00' });
     let innerRan = false;
 
     const outer = unitOfWork.run(async ({ em }) => {
@@ -157,7 +157,7 @@ describe('MikroOrmUnitOfWork', () => {
   });
 
   test('reports a lock wait that exceeds the timeout as a transient failure', async () => {
-    const wallet = walletRow();
+    const wallet = walletRow({ balance_amount: '0.00' });
     await insertRow(database.sql, 'wallets', wallet);
     let release!: () => void;
     const held = new Promise<void>((resolve) => {

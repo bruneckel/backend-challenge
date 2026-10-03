@@ -4,6 +4,7 @@ import {
   LATER,
   money,
   openedWallet,
+  pendingTransaction,
   storeOpenedWallet,
 } from '@test/support/domain-builders';
 import { gate, rejectionOf } from '@test/support/async';
@@ -12,10 +13,12 @@ import {
   createPersistenceHarness,
   plain,
 } from '@test/support/persistence';
+import type { WageringScope } from '@wallet/application/ports/wagering-scope';
 import {
   StaleWalletVersionError,
   WalletAlreadyExistsError,
 } from '@wallet/application/ports/wallet-repository';
+import { WagerTransactionKind } from '@wallet/domain/transaction/wager-transaction';
 import { Wallet } from '@wallet/domain/wallet/wallet';
 
 let harness: PersistenceHarness;
@@ -39,6 +42,22 @@ const movement = () => ({
   entryId: Bun.randomUUIDv7(),
   at: LATER,
 });
+
+async function debited(
+  scope: WageringScope,
+  wallet: Wallet,
+  amount: string,
+): Promise<void> {
+  const bet = pendingTransaction(wallet, WagerTransactionKind.Bet, amount);
+  const entry = wallet.debit(bet.money, {
+    transactionId: bet.id,
+    entryId: Bun.randomUUIDv7(),
+    at: LATER,
+  });
+  bet.markProcessed(undefined, wallet.balance, LATER);
+  await scope.transactions.insert(bet);
+  await scope.ledger.append(entry);
+}
 
 describe('MikroOrmWalletRepository', () => {
   test.each(['99999999999999999.99', '0.00', '0.10'])(
@@ -74,10 +93,10 @@ describe('MikroOrmWalletRepository', () => {
   test('reads the current version of several wallets at once', async () => {
     const untouched = await stored();
     const moved = await stored();
-    await harness.unitOfWork.run(async ({ wallets }) => {
-      const locked = await wallets.lockForUpdate(moved.id);
-      locked!.debit(money('10.00'), movement());
-      await wallets.applyBalanceChange(locked!, 1);
+    await harness.unitOfWork.run(async (scope) => {
+      const locked = await scope.wallets.lockForUpdate(moved.id);
+      await debited(scope, locked!, '10.00');
+      await scope.wallets.applyBalanceChange(locked!, 1);
     });
 
     const versions = await harness.unitOfWork.run(({ wallets }) =>
@@ -133,11 +152,11 @@ describe('MikroOrmWalletRepository', () => {
   test('applies a balance change when the stored version still matches', async () => {
     const wallet = await stored('100.00');
 
-    await harness.unitOfWork.run(async ({ wallets }) => {
-      const locked = await wallets.lockForUpdate(wallet.id);
+    await harness.unitOfWork.run(async (scope) => {
+      const locked = await scope.wallets.lockForUpdate(wallet.id);
       const expectedVersion = locked!.version;
-      locked!.debit(money('30.00'), movement());
-      await wallets.applyBalanceChange(locked!, expectedVersion);
+      await debited(scope, locked!, '30.00');
+      await scope.wallets.applyBalanceChange(locked!, expectedVersion);
     });
 
     const found = await harness.unitOfWork.run(({ wallets }) =>
@@ -154,10 +173,10 @@ describe('MikroOrmWalletRepository', () => {
   test('refuses a balance change computed from a stale version', async () => {
     const wallet = await stored('100.00');
     const stale = Wallet.rehydrate(wallet.toState());
-    await harness.unitOfWork.run(async ({ wallets }) => {
-      const locked = await wallets.lockForUpdate(wallet.id);
-      locked!.debit(money('10.00'), movement());
-      await wallets.applyBalanceChange(locked!, 1);
+    await harness.unitOfWork.run(async (scope) => {
+      const locked = await scope.wallets.lockForUpdate(wallet.id);
+      await debited(scope, locked!, '10.00');
+      await scope.wallets.applyBalanceChange(locked!, 1);
     });
     stale.debit(money('50.00'), movement());
 
@@ -180,13 +199,13 @@ describe('MikroOrmWalletRepository', () => {
     const firstLocked = gate();
     const order: string[] = [];
 
-    const first = harness.unitOfWork.run(async ({ wallets }) => {
-      const locked = await wallets.lockForUpdate(wallet.id);
+    const first = harness.unitOfWork.run(async (scope) => {
+      const locked = await scope.wallets.lockForUpdate(wallet.id);
       order.push('first locked');
       firstLocked.open();
       await Bun.sleep(200);
-      locked!.debit(money('80.00'), movement());
-      await wallets.applyBalanceChange(locked!, 1);
+      await debited(scope, locked!, '80.00');
+      await scope.wallets.applyBalanceChange(locked!, 1);
       order.push('first committing');
     });
     await firstLocked.opened;

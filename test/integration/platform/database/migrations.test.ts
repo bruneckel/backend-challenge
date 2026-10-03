@@ -10,7 +10,12 @@ const SCHEMA_TABLES = [
   'wallet_ledger_entries',
   'wallets',
 ];
-const SCHEMA_FUNCTIONS = ['guard_wager_transaction_update', 'reject_mutation'];
+const SCHEMA_FUNCTIONS = [
+  'check_ledger_entry_chain',
+  'check_wallet_matches_ledger',
+  'guard_wager_transaction_update',
+  'reject_mutation',
+];
 
 let database: TestDatabase;
 

@@ -8,6 +8,7 @@ import {
   nullViolationOf,
   violationOf,
 } from '@test/support/database';
+import { storeMovement, storeWallet } from '@test/support/ledger-states';
 import {
   ledgerRow,
   rejected,
@@ -26,10 +27,8 @@ afterAll(async () => {
   await database.drop();
 });
 
-async function storedWallet(): Promise<Row> {
-  const wallet = walletRow();
-  await insertRow(database.sql, 'wallets', wallet);
-  return wallet;
+function storedWallet(overrides: Row = {}): Promise<Row> {
+  return storeWallet(database.sql, overrides);
 }
 
 async function storedTransaction(
@@ -49,17 +48,17 @@ const insertEntry = (row: Row) =>
   insertRow(database.sql, 'wallet_ledger_entries', row);
 
 async function storedEntry(): Promise<Row> {
-  const entry = ledgerRow(await storedBet());
-  await insertEntry(entry);
-  return entry;
+  const wallet = await storedWallet();
+  return storeMovement(database.sql, wallet, transactionRow(wallet));
 }
 
 describe('wallet_ledger_entries shapes', () => {
   test.each([
-    ['a debit', {}],
-    ['a credit', { direction: 'CREDIT', balance_after: '110.00' }],
+    ['a debit', '100.00', {}],
+    ['a credit', '100.00', { direction: 'CREDIT', balance_after: '110.00' }],
     [
       'a credit that opens a wallet',
+      '0.00',
       {
         direction: 'CREDIT',
         wallet_version: 1,
@@ -67,10 +66,15 @@ describe('wallet_ledger_entries shapes', () => {
         balance_after: '10.00',
       },
     ],
-  ] as const)('accepts %s that adds up', async (_, overrides) => {
-    const entry = ledgerRow(await storedBet(), overrides);
+  ] as const)('accepts %s that adds up', async (_, balance, overrides) => {
+    const wallet = await storedWallet({ balance_amount: balance });
 
-    await insertEntry(entry);
+    const entry = await storeMovement(
+      database.sql,
+      wallet,
+      transactionRow(wallet),
+      overrides,
+    );
 
     const [stored] =
       await database.sql`select amount::text as amount, balance_after::text as balance_after from wallet_ledger_entries where id = ${entry.id}`;
@@ -230,8 +234,9 @@ describe('wallet_ledger_entries uniqueness', () => {
   });
 
   test('keeps at most one entry per transaction', async () => {
-    const bet = await storedBet();
-    await insertEntry(ledgerRow(bet));
+    const wallet = await storedWallet();
+    const bet = transactionRow(wallet);
+    await storeMovement(database.sql, wallet, bet);
 
     const again = ledgerRow(bet, {
       wallet_version: 3,
@@ -247,7 +252,7 @@ describe('wallet_ledger_entries uniqueness', () => {
 
   test('keeps at most one entry per wallet version', async () => {
     const wallet = await storedWallet();
-    await insertEntry(ledgerRow(await storedTransaction(wallet)));
+    await storeMovement(database.sql, wallet, transactionRow(wallet));
 
     const sameVersion = ledgerRow(await storedTransaction(wallet));
 

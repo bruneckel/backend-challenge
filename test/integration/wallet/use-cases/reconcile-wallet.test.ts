@@ -11,6 +11,7 @@ import { inconsistentWallets } from '@test/support/invariants';
 import { rejectionOf } from '@test/support/async';
 import { commandFor } from '@test/support/commands';
 import { insertRow } from '@test/support/database';
+import { bypassingLedgerGuards } from '@test/support/ledger-states';
 import { RecordingMetrics } from '@test/support/recording-metrics';
 import {
   type PersistenceHarness,
@@ -65,33 +66,34 @@ async function breakChainOf<T extends { id: string; playerId: string }>(
     amount: '10.00',
     result_balance_amount: '90.00',
   });
-  for (const row of [bet, win]) {
-    await insertRow(harness.database.sql, 'wager_transactions', row);
-  }
-  await insertRow(
-    harness.database.sql,
-    'wallet_ledger_entries',
-    ledgerRow(bet, {
-      wallet_version: 2,
-      direction: 'DEBIT',
-      amount: '10.00',
-      balance_before: '100.00',
-      balance_after: '90.00',
-    }),
-  );
-  await insertRow(
-    harness.database.sql,
-    'wallet_ledger_entries',
-    ledgerRow(win, {
-      wallet_version: 3,
-      direction: 'CREDIT',
-      amount: '10.00',
-      balance_before: '80.00',
-      balance_after: '90.00',
-    }),
-  );
-  await harness.database
-    .sql`update wallets set version = 3 where id = ${wallet.id}`;
+  await bypassingLedgerGuards(harness.database.sql, async (tx) => {
+    for (const row of [bet, win]) {
+      await insertRow(tx, 'wager_transactions', row);
+    }
+    await insertRow(
+      tx,
+      'wallet_ledger_entries',
+      ledgerRow(bet, {
+        wallet_version: 2,
+        direction: 'DEBIT',
+        amount: '10.00',
+        balance_before: '100.00',
+        balance_after: '90.00',
+      }),
+    );
+    await insertRow(
+      tx,
+      'wallet_ledger_entries',
+      ledgerRow(win, {
+        wallet_version: 3,
+        direction: 'CREDIT',
+        amount: '10.00',
+        balance_before: '80.00',
+        balance_after: '90.00',
+      }),
+    );
+    await tx`update wallets set version = 3 where id = ${wallet.id}`;
+  });
   return wallet;
 }
 
@@ -128,8 +130,11 @@ describe('ReconcileWallet', () => {
   test('flags a stored balance that drifted from the ledger without fixing it', async () => {
     const wallet = await openWalletWith(wagering, '100.00');
     corruptedOnPurpose.push(wallet.id);
-    await harness.database
-      .sql`update wallets set balance_amount = '101.50' where id = ${wallet.id}`;
+    await bypassingLedgerGuards(
+      harness.database.sql,
+      (tx) =>
+        tx`update wallets set balance_amount = '101.50' where id = ${wallet.id}`,
+    );
 
     const report = await wagering.reconcile.execute(wallet.id);
 
@@ -158,17 +163,19 @@ describe('ReconcileWallet', () => {
       amount: '100.00',
       result_balance_amount: '0.00',
     });
-    await insertRow(harness.database.sql, 'wager_transactions', bet);
-    await insertRow(
-      harness.database.sql,
-      'wallet_ledger_entries',
-      ledgerRow(bet, {
-        wallet_version: 2,
-        amount: '100.00',
-        balance_before: '100.00',
-        balance_after: '0.00',
-      }),
-    );
+    await bypassingLedgerGuards(harness.database.sql, async (tx) => {
+      await insertRow(tx, 'wager_transactions', bet);
+      await insertRow(
+        tx,
+        'wallet_ledger_entries',
+        ledgerRow(bet, {
+          wallet_version: 2,
+          amount: '100.00',
+          balance_before: '100.00',
+          balance_after: '0.00',
+        }),
+      );
+    });
 
     expect(await wagering.reconcile.execute(wallet.id)).toEqual({
       walletId: wallet.id,
@@ -201,8 +208,10 @@ describe('ReconcileWallet', () => {
     const wallet = await openWalletWith(wagering, '100.00');
     await wagering.submit.execute(commandFor(wallet, Bet, '30.00'));
     corruptedOnPurpose.push(wallet.id);
-    await harness.database
-      .sql`update wallets set version = 5 where id = ${wallet.id}`;
+    await bypassingLedgerGuards(
+      harness.database.sql,
+      (tx) => tx`update wallets set version = 5 where id = ${wallet.id}`,
+    );
 
     expect(await wagering.reconcile.execute(wallet.id)).toMatchObject({
       difference: brl('0.00'),
@@ -222,8 +231,11 @@ describe('ReconcileWallet', () => {
       logger: { info: record, warn: record, error: record },
     });
     const wallet = await breakChainOf(await openWalletWith(observed, '100.00'));
-    await harness.database
-      .sql`update wallets set version = 7, balance_amount = '99.00' where id = ${wallet.id}`;
+    await bypassingLedgerGuards(
+      harness.database.sql,
+      (tx) =>
+        tx`update wallets set version = 7, balance_amount = '99.00' where id = ${wallet.id}`,
+    );
 
     await observed.reconcile.execute(wallet.id);
 
