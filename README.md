@@ -23,7 +23,7 @@ Sobe, nesta ordem:
 |---|---|
 | `postgres` | PostgreSQL 18.6 |
 | `sqs` | MiniStack 1.5.20 (SQS FIFO), sem credenciais |
-| `keycloak` | Keycloak 26.8.0 em `http://localhost:8080`, com o realm `wagering` importado de [keycloak/wagering-realm.json](keycloak/wagering-realm.json) |
+| `keycloak` | Keycloak 26.8.0 em `http://localhost:8080`, com o realm `wagering` importado de [keycloak/wagering-realm.json](keycloak/wagering-realm.json); console de administração com `admin`/`admin`, só para desenvolvimento |
 | `bootstrap` | aplica as migrations e cria as filas `wager-transactions.fifo`, `wager-transactions-dlq.fifo` e `wagering-events.fifo`; roda uma vez e termina com código 0 |
 | `api` | HTTP em `http://localhost:3000` |
 | `worker` | consome a fila de entrada, publica os eventos da outbox e resolve referências pendentes |

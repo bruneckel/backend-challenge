@@ -454,7 +454,7 @@ Entregue depois da versão avaliada do desafio (tag `desafio-v1`, que tinha só 
 
 **Validação** (`JwtTokenVerifier`, com `jose`): assinatura RS256 pela chave do JWKS com o `kid` do token (outros algoritmos, inclusive `none` e HS256, são recusados); `iss` e `aud` conferidos; `exp` obrigatório e `nbf` respeitado, com tolerância de relógio de 5 s; `sub` obrigatório; `provider_id` e `roles` com tipo errado invalidam o token. Um token recusado vira 401 `INVALID_TOKEN`; a falta do header Bearer, 401 `AUTHENTICATION_REQUIRED`.
 
-**JWKS.** As chaves ficam em cache por até 10 minutos. Um `kid` desconhecido dispara uma nova busca, no máximo uma a cada 30 s, o que cobre a rotação de chaves do Keycloak. Com o Keycloak fora do ar, os tokens seguem validados pelo cache. Se não há chave em cache, ou se o cache venceu e a busca falha, a resposta é **503 `SERVICE_UNAVAILABLE`, retryable, e não 401**: o problema é do IdP, e o cliente não deve descartar um token válido. O log da api registra `identity provider unavailable` com o motivo. Na prática, uma queda do Keycloak mais longa que a vida do token (5 minutos) já impede os clientes de obter tokens novos, então o cache cobre as quedas curtas.
+**JWKS.** As chaves ficam em cache por até 10 minutos. Um `kid` desconhecido dispara uma nova busca, no máximo uma a cada 30 s, o que cobre a rotação de chaves do Keycloak. Com o Keycloak fora do ar, os tokens seguem validados pelo cache. Se não há chave em cache, ou se o cache venceu e a busca falha, a resposta é **503 `SERVICE_UNAVAILABLE`, retryable, e não 401**: o problema é do IdP, e o cliente não deve descartar um token válido. O log da api registra `identity provider unavailable` com o motivo. Na prática, uma queda do Keycloak mais longa que a vida do token (5 minutos) já impede os clientes de obter tokens novos, então o cache cobre as quedas curtas. Fora do ambiente local, o JWKS precisa chegar por HTTPS ou por uma rede interna confiável: quem controla essa resposta controla quais tokens a api aceita.
 
 **Autorização** (guard global com `@RequiresRole` e duas checagens nos controllers):
 
@@ -482,7 +482,7 @@ A autenticação roda antes de tudo: antes da validação do corpo, da `Idempote
 
 **Custo medido:** cerca de 40 µs de CPU por requisição na api, ou 3 a 5% da vazão de um processo saturado (A/B em [LOAD-TEST.md](LOAD-TEST.md#custo-da-autenticação)); a latência fora da saturação não muda.
 
-**Fora desta etapa:** o painel futuro usaria Authorization Code com PKCE e cliente público, com papéis de operação e auditoria separados dos provedores; mTLS entre serviços; escopo da idempotência por provedor (adiado no plano); revogação imediata (o token vale 5 minutos; revogar uma chave é removê-la do JWKS, e o cache a abandona em até 10 minutos).
+**Fora desta etapa:** o painel futuro usaria Authorization Code com PKCE e cliente público, com papéis de operação e auditoria separados dos provedores; mTLS entre serviços; escopo da idempotência por provedor (adiado no plano; como a `Idempotency-Key` é global, um provedor consegue saber, pelo 409 `IDEMPOTENCY_KEY_CONFLICT`, que uma key já foi usada por outro, sem ver o resultado nem reaproveitá-lo, porque o corpo dele leva o próprio `providerId`); revogação imediata (o token vale 5 minutos; revogar uma chave é removê-la do JWKS, e o cache a abandona em até 10 minutos).
 
 ## Interpretações do enunciado
 
