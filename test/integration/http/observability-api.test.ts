@@ -9,6 +9,7 @@ import {
 import { PinoLogger } from '@observability/logger/pino-logger';
 import { inconsistentWallets } from '@test/support/invariants';
 import { type ApiHarness, startApi } from '@test/support/api';
+import { bypassingLedgerGuards } from '@test/support/ledger-states';
 import { METRICS_READER, bearerFor } from '@test/support/identity';
 
 let api: ApiHarness;
@@ -145,8 +146,11 @@ describe('metrics endpoint', () => {
     const consistent = await openWallet();
     const drifted = await openWallet();
     corruptedOnPurpose.push(drifted.id);
-    await api.database
-      .sql`update wallets set balance_amount = '99.00' where id = ${drifted.id}`;
+    await bypassingLedgerGuards(
+      api.database.sql,
+      (tx) =>
+        tx`update wallets set balance_amount = '99.00' where id = ${drifted.id}`,
+    );
 
     await api.request('POST', `/wallets/${consistent.id}/reconciliation`);
     await api.request('POST', `/wallets/${drifted.id}/reconciliation`);

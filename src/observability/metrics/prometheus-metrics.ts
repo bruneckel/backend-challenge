@@ -74,11 +74,19 @@ const COUNTERS: Record<CounterName, Definition> = {
     labelNames: ['result'],
   },
   wallet_reconciliation_divergences_total: {
-    help: 'Wallet reconciliations that found the stored balance differing from the ledger',
-    labelNames: [],
+    help: 'Divergences found by wallet reconciliations: balance, ledger chain or version',
+    labelNames: ['kind'],
   },
   wallet_events_streamed_total: {
     help: 'Ledger entries written to wallet event streams',
+    labelNames: [],
+  },
+  outbox_events_purged_total: {
+    help: 'Published outbox events deleted after the retention period',
+    labelNames: [],
+  },
+  inbox_messages_purged_total: {
+    help: 'Processed inbox messages deleted after the retention period',
     labelNames: [],
   },
 };

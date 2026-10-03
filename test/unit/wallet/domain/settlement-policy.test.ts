@@ -126,6 +126,22 @@ describe('SettlementPolicy for BET, WIN and LOSS', () => {
     expect(wallet.balance.toString()).toBe('150.00');
   });
 
+  test('WIN past the storage limit is rejected with BALANCE_LIMIT_EXCEEDED and touches nothing', () => {
+    const { outcome, wallet, transaction } = settle(
+      pendingTransaction(Win, brl('10.00')),
+      { wallet: walletWith('99999999999999990.00') },
+    );
+
+    expect(outcome).toEqual({
+      type: 'rejected',
+      failureCode: FailureCode.BalanceLimitExceeded,
+    });
+    expect(wallet.balance.toString()).toBe('99999999999999990.00');
+    expect(wallet.version).toBe(1);
+    expect(transaction.status).toBe(WagerTransactionStatus.Rejected);
+    expect(transaction.resultBalance?.toString()).toBe('99999999999999990.00');
+  });
+
   test('LOSS is processed without a ledger entry and without changing the wallet', () => {
     const { outcome, wallet, transaction } = settle(
       pendingTransaction(Loss, brl('0.00')),

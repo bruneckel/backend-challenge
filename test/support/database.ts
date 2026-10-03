@@ -32,9 +32,38 @@ export interface NullViolation {
   column: unknown;
 }
 
+const TEST_DATABASE = /^wagering_test_([a-z0-9]+)_[a-z0-9]+$/;
+const STALE_AFTER_MS = 10 * 60_000;
+
+let staleSweep: Promise<void> | undefined;
+
+export async function dropStaleTestDatabases(
+  admin: SQL,
+  now = Date.now(),
+): Promise<void> {
+  const rows: { datname: string }[] = await admin`
+    select d.datname from pg_database d
+    where not exists (
+      select 1 from pg_stat_activity a where a.datname = d.datname
+    )`;
+  for (const { datname } of rows) {
+    const createdAt = TEST_DATABASE.exec(datname)?.[1];
+    if (
+      createdAt !== undefined &&
+      now - parseInt(createdAt, 36) > STALE_AFTER_MS
+    ) {
+      await admin
+        .unsafe(`drop database if exists ${datname}`)
+        .catch(() => undefined);
+    }
+  }
+}
+
 export async function createTestDatabase(): Promise<TestDatabase> {
   const name = `wagering_test_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const admin = new SQL(DATABASE_URL);
+  staleSweep ??= dropStaleTestDatabases(admin);
+  await staleSweep;
   await admin.unsafe(`create database ${name}`);
   const url = new URL(DATABASE_URL);
   url.pathname = `/${name}`;

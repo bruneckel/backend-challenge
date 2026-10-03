@@ -51,6 +51,7 @@ export interface AppConfig {
     publisherEnabled: boolean;
     consumerEnabled: boolean;
     schedulerEnabled: boolean;
+    retentionEnabled: boolean;
   };
   observability: {
     logLevel: string;
@@ -68,6 +69,13 @@ export interface AppConfig {
     maxStreams: number;
     sweepIntervalMs: number;
     heartbeatIntervalMs: number;
+  };
+  retention: {
+    outboxHours: number;
+    inboxHours: number;
+    batchSize: number;
+    batchPauseMs: number;
+    intervalMs: number;
   };
 }
 
@@ -178,6 +186,12 @@ const environmentSchema = z
     STREAM_MAX_STREAMS: integer(1000, 1),
     STREAM_SWEEP_INTERVAL_MS: integer(500, 10),
     STREAM_HEARTBEAT_INTERVAL_MS: integer(15_000, 1000),
+    RETENTION_ENABLED: toggle(true),
+    OUTBOX_RETENTION_HOURS: integer(168, 1),
+    INBOX_RETENTION_HOURS: integer(360, 168),
+    RETENTION_BATCH_SIZE: integer(1000, 1, 10_000),
+    RETENTION_BATCH_PAUSE_MS: integer(250, 0, 60_000),
+    RETENTION_INTERVAL_MS: integer(60_000, 1000),
   })
   .refine(
     (env) => env.REFERENCE_BACKOFF_MAX_MS >= env.REFERENCE_BACKOFF_BASE_MS,
@@ -278,6 +292,7 @@ export function loadConfig(
       publisherEnabled: values.OUTBOX_PUBLISHER_ENABLED,
       consumerEnabled: values.CONSUMER_ENABLED,
       schedulerEnabled: values.REFERENCE_SCHEDULER_ENABLED,
+      retentionEnabled: values.RETENTION_ENABLED,
     },
     observability: {
       logLevel: values.LOG_LEVEL,
@@ -297,6 +312,13 @@ export function loadConfig(
       maxStreams: values.STREAM_MAX_STREAMS,
       sweepIntervalMs: values.STREAM_SWEEP_INTERVAL_MS,
       heartbeatIntervalMs: values.STREAM_HEARTBEAT_INTERVAL_MS,
+    },
+    retention: {
+      outboxHours: values.OUTBOX_RETENTION_HOURS,
+      inboxHours: values.INBOX_RETENTION_HOURS,
+      batchSize: values.RETENTION_BATCH_SIZE,
+      batchPauseMs: values.RETENTION_BATCH_PAUSE_MS,
+      intervalMs: values.RETENTION_INTERVAL_MS,
     },
   };
 }

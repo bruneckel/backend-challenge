@@ -18,10 +18,17 @@ export interface Storage {
   dispose(keepData: boolean): Promise<void>;
 }
 
-export async function createStorage(id: string): Promise<Storage> {
+export async function createStorage(
+  id: string,
+  template?: string,
+): Promise<Storage> {
   const databaseName = `load_${id}`;
   const admin = new SQL(LOAD_DATABASE_URL);
-  await admin.unsafe(`create database ${databaseName}`);
+  await admin.unsafe(
+    template === undefined
+      ? `create database ${databaseName}`
+      : `create database ${databaseName} template ${template} strategy file_copy`,
+  );
   await admin.close();
   const url = new URL(LOAD_DATABASE_URL);
   url.pathname = `/${databaseName}`;

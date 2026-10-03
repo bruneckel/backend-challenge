@@ -16,6 +16,7 @@ async function withMigrator<T>(
     migrations: {
       migrationsList: migrations,
       tableName: MIGRATIONS_TABLE,
+      allOrNothing: false,
       snapshot: false,
       silent: true,
     },

@@ -26,7 +26,7 @@ Sobe, nesta ordem:
 | `keycloak` | Keycloak 26.8.0 em `http://localhost:8080`, com o realm `wagering` importado de [keycloak/wagering-realm.json](keycloak/wagering-realm.json); console de administração com `admin`/`admin`, só para desenvolvimento |
 | `bootstrap` | aplica as migrations e cria as filas `wager-transactions.fifo`, `wager-transactions-dlq.fifo` e `wagering-events.fifo`; roda uma vez e termina com código 0 |
 | `api` | HTTP em `http://localhost:3000` |
-| `worker` | consome a fila de entrada, publica os eventos da outbox e resolve referências pendentes |
+| `worker` | consome a fila de entrada, publica os eventos da outbox, resolve referências pendentes e apaga eventos e mensagens que passaram da retenção |
 
 `--wait` só retorna quando `api` e `worker` estão com `/health/ready` respondendo 200 e o Keycloak está pronto.
 
@@ -95,7 +95,7 @@ Resposta: `200 {"transactionId":"…","status":"PROCESSED","balance":{"amount":"
 | `POST /wallets` | abre uma wallet (uma por player e moeda) | operador |
 | `GET /wallets/:walletId` | saldo e versão | operador |
 | `GET /wallets/:walletId/ledger?limit=50&cursor=…` | lançamentos, do mais novo para o mais antigo | operador |
-| `POST /wallets/:walletId/reconciliation` | compara o saldo com o ledger, sem alterar nada | operador |
+| `POST /wallets/:walletId/reconciliation` | compara o saldo com o ledger e confere a cadeia de lançamentos e a versão, sem alterar nada | operador |
 | `GET /wallets/:walletId/events` | saldo e lançamentos em tempo real (Server-Sent Events) | operador |
 | `POST /wagering/transactions` | BET, WIN, LOSS, REFUND, ROLLBACK | o provedor do `providerId` do corpo |
 | `GET /wagering/transactions/:transactionId` | uma transação | o provedor dela ou o operador |
@@ -137,6 +137,17 @@ curl -s localhost:3000/wallets/$WALLET -H "authorization: Bearer $OPERATOR"
 ```
 
 O script publica um `WagerTransactionRequested` em `wager-transactions.fifo` (`MessageGroupId` = wallet). O worker aplica a operação e o saldo muda em menos de um segundo. Opções: `--kind`, `--amount`, `--currency`, `--provider` e `--reference <externalTransactionId>`.
+
+## Reprocessar a DLQ
+
+```bash
+bun run dlq list                                        # o que está na DLQ, com o motivo, sem consumir
+bun run dlq redrive --reason RETRIES_EXHAUSTED --dry-run   # o que voltaria para a fila
+bun run dlq redrive --reason RETRIES_EXHAUSTED          # devolve à fila de entrada
+bun run dlq redrive --reason WALLET_NOT_FOUND           # depois que a wallet passar a existir
+```
+
+Só `RETRIES_EXHAUSTED` e `WALLET_NOT_FOUND` podem voltar. O segundo só faz sentido quando a wallet passa a existir com aquele id, por exemplo numa importação que preserva os ids, porque a API gera o id de cada wallet nova. Conflitos e mensagens inválidas precisam de correção na própria mensagem. A ordem de cada wallet é preservada, e reenviar é seguro: a inbox deduplica pelo `messageId`.
 
 ## Rodar localmente, sem a imagem da aplicação
 
@@ -210,6 +221,9 @@ Todas são validadas no boot; um valor inválido derruba o processo com uma mens
 | `AUTH_JWKS_URL` | `<AUTH_ISSUER>/protocol/openid-connect/certs` | chaves públicas do IdP; no Compose, `http://keycloak:8080/...` |
 | `AUTH_JWKS_TIMEOUT_MS` | `5000` | timeout da busca das chaves |
 | `AUTH_CLOCK_SKEW_SECONDS` | `5` | tolerância de relógio para `exp` e `nbf` (máximo 300) |
+| `RETENTION_ENABLED` | `true` | liga a limpeza de eventos publicados e mensagens processadas |
+| `OUTBOX_RETENTION_HOURS` · `INBOX_RETENTION_HOURS` | `168` · `360` | quanto tempo eventos publicados e mensagens processadas ficam guardados (a inbox aceita no mínimo 168) |
+| `RETENTION_BATCH_SIZE` · `RETENTION_BATCH_PAUSE_MS` · `RETENTION_INTERVAL_MS` | `1000` · `250` · `60000` | linhas por lote, pausa entre lotes cheios e espera quando não há o que apagar |
 | `STREAM_SWEEP_INTERVAL_MS` | `500` | intervalo em que cada réplica confere as wallets assinadas (latência máxima de entrega) |
 | `STREAM_HEARTBEAT_INTERVAL_MS` | `15000` | comentário `keep-alive` nos streams parados |
 | `STREAM_MAX_STREAMS` | `1000` | streams abertos por réplica; acima disso, 503 `STREAM_CAPACITY_EXCEEDED` |
@@ -228,7 +242,7 @@ Todas são validadas no boot; um valor inválido derruba o processo com uma mens
 | testes falham com conexão recusada | `bun run infra:up` antes de `bun run test` |
 | mudança de `SQS_VISIBILITY_TIMEOUT_SECONDS` sem efeito na fila | a fila já existe com o valor antigo; com o MiniStack, recrie o container `sqs` e rode o bootstrap |
 | `InvalidChecksumError` ao reenviar uma mensagem com o mesmo id de deduplicação e outro corpo | divergência conhecida do MiniStack; use outro `MessageDeduplicationId` |
-| bancos `wagering_test_*` sobrando no PostgreSQL | uma execução de testes foi interrompida; são inofensivos e somem com `docker compose down -v` |
+| bancos `wagering_test_*` sobrando no PostgreSQL | uma execução de testes foi interrompida; a próxima execução apaga os que têm mais de 10 minutos e nenhuma conexão |
 
 ## Estrutura
 

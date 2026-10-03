@@ -20,6 +20,7 @@ import {
   transactionRow,
   walletRow,
 } from '@test/support/schema-rows';
+import { FailureCode } from '@wallet/domain/transaction/failure-code';
 
 const NULLABLE_COLUMNS = [
   'reference_external_transaction_id',
@@ -30,6 +31,8 @@ const NULLABLE_COLUMNS = [
   'result_balance_currency',
   'next_reference_attempt_at',
 ];
+
+const OPENED = { amount: '100.00', result_balance_amount: '100.00' };
 
 let database: TestDatabase;
 let wallet: Row;
@@ -44,7 +47,7 @@ afterAll(async () => {
 });
 
 async function storedWallet(overrides: Row = {}): Promise<Row> {
-  const row = walletRow(overrides);
+  const row = walletRow({ balance_amount: '0.00', ...overrides });
   await insertRow(database.sql, 'wallets', row);
   return row;
 }
@@ -99,10 +102,21 @@ describe('wager_transactions shapes', () => {
     expect(storedRow).toEqual({ status: row.status, amount: row.amount });
   });
 
+  test.each(Object.values(FailureCode))(
+    'accepts the failure code %s the domain knows',
+    async (failureCode) => {
+      await stored(
+        failureCode === FailureCode.ProcessingFailed
+          ? failed
+          : { ...rejected, failure_code: failureCode },
+      );
+    },
+  );
+
   test('accepts the internal OPENING of a wallet', async () => {
     const fresh = await storedWallet();
 
-    await insertTransaction(transactionRow(fresh, openingOf(fresh)));
+    await insertTransaction(transactionRow(fresh, openingOf(fresh, OPENED)));
   });
 
   test.each(requiredColumns(transactionRow(walletRow()), NULLABLE_COLUMNS))(
@@ -534,11 +548,12 @@ describe('wager_transactions uniqueness', () => {
 
   test('refuses a second OPENING for the same wallet', async () => {
     const fresh = await storedWallet();
-    await insertTransaction(transactionRow(fresh, openingOf(fresh)));
+    await insertTransaction(transactionRow(fresh, openingOf(fresh, OPENED)));
 
     const second = transactionRow(
       fresh,
       openingOf(fresh, {
+        ...OPENED,
         external_transaction_id: 'opening:again',
         idempotency_key: 'opening:again',
       }),

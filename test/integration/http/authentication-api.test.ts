@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { LogFields, Logger } from '@shared/application/logger';
 import { type ApiHarness, startApi } from '@test/support/api';
 import { LocalIdentityProvider, testIdentity } from '@test/support/identity';
 
@@ -152,7 +153,13 @@ describe('authentication', () => {
   test('answers 503 while the identity provider cannot serve its keys', async () => {
     const unavailable = await LocalIdentityProvider.start();
     unavailable.setJwks('failing');
-    const other = await startApi(unavailable.environment);
+    const warnings: { message: string; fields?: LogFields }[] = [];
+    const logger: Logger = {
+      info() {},
+      warn: (message, fields) => warnings.push({ message, fields }),
+      error() {},
+    };
+    const other = await startApi(unavailable.environment, logger);
     try {
       const token = await unavailable.sign({ providerId: 'provider-a' });
 
@@ -166,6 +173,13 @@ describe('authentication', () => {
         code: 'SERVICE_UNAVAILABLE',
         retryable: true,
       });
+      expect(warnings).toEqual([
+        {
+          message: 'identity provider unavailable',
+          fields: { error: expect.any(String) },
+        },
+      ]);
+      expect(JSON.stringify(warnings)).not.toContain(token);
     } finally {
       await other.close();
       unavailable.stop();

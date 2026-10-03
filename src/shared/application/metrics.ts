@@ -13,7 +13,9 @@ export type CounterName =
   | 'wallet_version_conflicts_total'
   | 'wallet_reconciliations_total'
   | 'wallet_reconciliation_divergences_total'
-  | 'wallet_events_streamed_total';
+  | 'wallet_events_streamed_total'
+  | 'outbox_events_purged_total'
+  | 'inbox_messages_purged_total';
 
 export type GaugeName =
   | 'pending_reference_transactions'

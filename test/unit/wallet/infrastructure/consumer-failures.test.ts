@@ -9,7 +9,10 @@ import {
 import { DuplicateWagerTransactionError } from '@wallet/application/ports/wager-transaction-repository';
 import { InvalidMoneyError } from '@wallet/domain/money/money';
 import { InvalidWagerTransactionError } from '@wallet/domain/transaction/wager-transaction';
-import { classifyConsumerFailure } from '@wallet/infrastructure/messaging/consumer-failures';
+import {
+  REDRIVABLE_REASONS,
+  classifyConsumerFailure,
+} from '@wallet/infrastructure/messaging/consumer-failures';
 
 describe('classifyConsumerFailure', () => {
   test.each([
@@ -71,5 +74,14 @@ describe('classifyConsumerFailure', () => {
     expect(classifyConsumerFailure(new TransientFailure('connection'))).toEqual(
       { type: 'retry', pauseConsumer: true },
     );
+  });
+});
+
+describe('dead letters that may go back to the queue', () => {
+  test('are the ones a retry or a fix outside the message can solve', () => {
+    expect([...REDRIVABLE_REASONS].sort()).toEqual([
+      'RETRIES_EXHAUSTED',
+      'WALLET_NOT_FOUND',
+    ]);
   });
 });

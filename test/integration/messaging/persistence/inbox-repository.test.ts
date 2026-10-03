@@ -41,6 +41,22 @@ function received(overrides: Partial<ReceiveInboxProps> = {}): InboxMessage {
 const record = (message: InboxMessage) =>
   harness.unitOfWork.run(({ inbox }) => inbox.record(message));
 
+async function processed(message: InboxMessage): Promise<InboxMessage> {
+  await record(message);
+  message.markProcessed(message.receivedAt);
+  await harness.unitOfWork.run(({ inbox }) =>
+    inbox.saveProcessed(message, undefined),
+  );
+  return message;
+}
+
+async function stored(messages: readonly InboxMessage[]): Promise<string[]> {
+  const rows: { message_id: string }[] = await harness.database.sql`
+    select message_id from inbox_messages
+    where message_id in ${harness.database.sql(messages.map((message) => message.messageId))}`;
+  return rows.map((row) => row.message_id).sort();
+}
+
 describe('MikroOrmInboxRepository', () => {
   test('records a message the first time it arrives', async () => {
     expect(await record(received())).toEqual({ recorded: true });
@@ -124,11 +140,12 @@ describe('MikroOrmInboxRepository', () => {
 
   test('saves when the message was processed and the transaction it produced', async () => {
     const opened = openedWallet('100.00');
-    const { bet } = settledBet(opened.wallet);
+    const { bet, entry } = settledBet(opened.wallet);
     const message = received();
     await harness.unitOfWork.run(async (scope) => {
       await storeOpenedWallet(scope, opened);
       await scope.transactions.insert(bet);
+      await scope.ledger.append(entry);
       await scope.inbox.record(message);
       message.markProcessed(LATER);
       await scope.inbox.saveProcessed(message, bet.id);
@@ -137,5 +154,76 @@ describe('MikroOrmInboxRepository', () => {
     const [row] = await harness.database.sql`
       select processed_at, transaction_id from inbox_messages where message_id = ${message.messageId}`;
     expect(row).toEqual({ processed_at: LATER, transaction_id: bet.id });
+  });
+
+  test('deletes the processed messages received before the cutoff and keeps the rest', async () => {
+    const cutoff = new Date('2020-06-01T00:00:00.000Z');
+    const old = await processed(
+      received({ receivedAt: new Date('2020-01-01T00:00:00.000Z') }),
+    );
+    const recent = await processed(
+      received({ receivedAt: new Date('2020-12-01T00:00:00.000Z') }),
+    );
+    const unfinished = received({
+      receivedAt: new Date('2020-01-02T00:00:00.000Z'),
+    });
+    await record(unfinished);
+
+    const deleted = await harness.unitOfWork.run(({ inbox }) =>
+      inbox.deleteProcessedBefore(cutoff, 100),
+    );
+
+    expect(deleted).toEqual({
+      count: 1,
+      last: new Date('2020-01-01T00:00:00.000Z'),
+    });
+    expect(await stored([old, recent, unfinished])).toEqual(
+      [recent.messageId, unfinished.messageId].sort(),
+    );
+  });
+
+  test('deletes at most one batch of processed messages at a time', async () => {
+    const cutoff = new Date('2019-06-01T00:00:00.000Z');
+    for (const day of ['01', '02', '03']) {
+      await processed(
+        received({ receivedAt: new Date(`2019-01-${day}T00:00:00.000Z`) }),
+      );
+    }
+
+    const batches: number[] = [];
+    for (let run = 0; run < 3; run += 1) {
+      const batch = await harness.unitOfWork.run(({ inbox }) =>
+        inbox.deleteProcessedBefore(cutoff, 2),
+      );
+      batches.push(batch.count);
+    }
+
+    expect(batches).toEqual([2, 1, 0]);
+  });
+
+  test('deletes only the messages received from a given time on, oldest first', async () => {
+    const cutoff = new Date('2018-06-01T00:00:00.000Z');
+    const messages = [];
+    for (const day of ['01', '02', '03']) {
+      messages.push(
+        await processed(
+          received({ receivedAt: new Date(`2018-01-${day}T00:00:00.000Z`) }),
+        ),
+      );
+    }
+
+    const deleted = await harness.unitOfWork.run(({ inbox }) =>
+      inbox.deleteProcessedBefore(
+        cutoff,
+        10,
+        new Date('2018-01-02T00:00:00.000Z'),
+      ),
+    );
+
+    expect(deleted).toEqual({
+      count: 2,
+      last: new Date('2018-01-03T00:00:00.000Z'),
+    });
+    expect(await stored(messages)).toEqual([messages[0]!.messageId]);
   });
 });

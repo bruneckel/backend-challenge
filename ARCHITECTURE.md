@@ -131,9 +131,11 @@ O projeto segue no 1.3.14 enquanto o runtime local estiver nessa versão. O `Doc
 
 ## Schema e garantias no banco
 
-A migration `src/platform/database/migrations/migration-20261002120000-create-wagering-schema.ts` é escrita à mão, com `up` e `down`, e roda pelo papel `bootstrap` ou por `bun run migrate:up` / `migrate:down` (sem CLI do ORM). Toda constraint, índice e trigger tem nome explícito, e os testes conferem o SQLSTATE e o nome da constraint violada.
+A migration `src/platform/database/migrations/migration-20261002120000-create-wagering-schema.ts` é escrita à mão, com `up` e `down`, e roda pelo papel `bootstrap` ou por `bun run migrate:up` / `migrate:down` (sem CLI do ORM). Toda constraint, índice e trigger tem nome explícito, e os testes conferem o SQLSTATE e o nome da constraint violada. As migrations seguintes (código de falha `BALANCE_LIMIT_EXCEEDED`, índice de retenção da inbox e guardas saldo ⇔ ledger) rodam cada uma por conta própria (`allOrNothing: false`). Em tabela que pode ser grande, valem duas regras:
+- **Índice:** criado com `CREATE INDEX CONCURRENTLY`, fora de transação.
+- **Troca de `CHECK`:** a constraint nova entra como `NOT VALID`, e o `VALIDATE CONSTRAINT` roda num comando separado, sem bloquear leitura nem escrita. Numa cópia com 5 milhões de transações, a troca numa transação só parou toda leitura e escrita da tabela por cerca de 0,4 s. A troca em duas etapas não parou nenhuma (ver LOAD-TEST.md).
 
-**Mapeamento do Money.** Duas colunas: valor `numeric` e moeda `text` com `CHECK` de três letras maiúsculas. O valor não tem precisão declarada e tem `CHECK (scale(col) = 2)`, sinal e magnitude menor que 10^17. Com `numeric(p,2)` o PostgreSQL arredondaria `10.005` em silêncio antes de qualquer CHECK; sem precisão declarada, a escrita é recusada. Na aplicação, o valor é uma string decimal convertida para `big.js` dentro de `Money`, e volta do driver como string exata.
+**Mapeamento do Money.** Duas colunas: valor `numeric` e moeda `text` com `CHECK` de três letras maiúsculas. O valor não tem precisão declarada e tem `CHECK (scale(col) = 2)`, sinal e magnitude menor que 10^17. Com `numeric(p,2)` o PostgreSQL arredondaria `10.005` em silêncio antes de qualquer CHECK; sem precisão declarada, a escrita é recusada. Na aplicação, o valor é uma string decimal convertida para `big.js` dentro de `Money`, e volta do driver como string exata. O limite também está no domínio: um crédito que levaria o saldo a 10^17 ou mais é rejeitado com `BALANCE_LIMIT_EXCEEDED` antes de chegar ao banco (a migration `20261003140000` acrescentou o código ao `CHECK`).
 
 | Garantia do enunciado | Mecanismo no schema |
 |---|---|
@@ -147,7 +149,16 @@ A migration `src/platform/database/migrations/migration-20261002120000-create-wa
 | transação terminal imutável | trigger `BEFORE UPDATE` recusa qualquer alteração em linha PROCESSED, REJECTED ou FAILED e qualquer mudança nas colunas imutáveis; `DELETE` também é recusado |
 | moeda do lançamento igual à da wallet e à da transação | FKs compostas `(wallet_id, currency)` e `(transaction_id, wallet_id, currency)` |
 | conta do lançamento | `CHECK` de `balance_after = balance_before ± amount` conforme a direção |
+| saldo da wallet igual ao ledger, cadeia contínua | constraint triggers `DEFERRABLE INITIALLY DEFERRED`, conferidas no commit (abaixo); levantam `23514` com o nome do trigger |
 | mensagem processada uma vez por consumidor | PK `(consumer_name, message_id)` na inbox |
+
+**Saldo ⇔ ledger no banco.** Duas constraint triggers da migration `20261003170000`, adiadas para o commit porque a aplicação grava a wallet e o lançamento em comandos separados da mesma transação:
+- `wallets_balance_matches_ledger`, na criação da wallet e em toda mudança de saldo ou versão: o saldo é o `balance_after` do lançamento da versão atual. A exceção é a wallet aberta com saldo zero, que fica na versão 1 sem lançamento.
+- `wallet_ledger_entries_follow_chain`, em todo lançamento: `balance_before` é o `balance_after` da versão anterior, ou zero no primeiro lançamento (versão 1 ou 2, conforme a wallet tenha sido aberta com saldo ou não). Nenhuma versão é pulada, e o lançamento nunca fica à frente da wallet.
+
+Cada operação paga três buscas por índice único no commit: o lançamento anterior, a wallet e o lançamento da versão. Numa A/B de saturação com 3 apis e 3 workers, isso custou de 1% a 2% da vazão de pico, dentro da variação entre rodadas (ver LOAD-TEST.md). As mensagens de erro trazem ids e versões, nunca valores.
+
+Uma wallet que já diverge do ledger fica fechada até ser corrigida. A próxima operação falha no commit (`23514`) e nada é gravado. A API responde 500. A mensagem da fila vai para a DLQ como `RETRIES_EXHAUSTED` depois dos retries, e `bun run dlq redrive` a devolve depois da correção. Numa base existente, os triggers só valem para escritas novas. Por isso, reconciliar todas as wallets antes de aplicar a migration mostra quais ficariam fechadas. A reconciliação continua como controle de detecção para o que contorna os triggers, como um restore ou uma sessão de replicação (`session_replication_role = replica`), que é como os testes dela injetam a divergência.
 
 Outras coerências checadas no banco: status `PENDING` nunca é gravado (só existe em memória); `failure_code` existe se e somente se o status é REJECTED ou FAILED; `processed_at` só em PROCESSED; `next_reference_attempt_at` só em PENDING_REFERENCE; `reference_transaction_id` existe se e somente se a transação foi processada e declarou referência; o provedor reservado `internal` só aparece em OPENING; o saldo observado fica sempre na moeda da wallet.
 
@@ -243,6 +254,7 @@ Estados terminais são imutáveis no domínio (`InvalidTransactionStateError`) e
 | `REFERENCE_NOT_PROCESSED` | referência REJECTED/FAILED, ou ainda pendente quando as tentativas acabam | REJECTED | 422 |
 | `REFERENCE_ALREADY_REVERSED` | a referência já tem uma reversão PROCESSED do mesmo tipo | REJECTED | 422 |
 | `REFERENCE_NOT_FOUND` | a referência não apareceu dentro das tentativas | REJECTED | 422 (replay) |
+| `BALANCE_LIMIT_EXCEEDED` | crédito (WIN, REFUND ou ROLLBACK de débito) que levaria o saldo ao limite de armazenamento, 10^17 | REJECTED | 422 |
 | `PROCESSING_FAILED` | o scheduler falhou repetidamente por erro que não é de negócio nem transitório | FAILED | 500 (replay) |
 
 Nada disso cobre indisponibilidade (503, nada gravado) nem conflitos de chave (409 ou DLQ, nada gravado).
@@ -302,6 +314,7 @@ Fila `wager-transactions.fifo`, mensagem `WagerTransactionRequested` com o mesmo
 - **DLQ manual:** envia para `wager-transactions-dlq.fifo` (retenção de 14 dias) com o corpo e o grupo originais, `MessageDeduplicationId` = MessageId do SQS e atributos `reason`, `originalMessageId`, `sqsMessageId`, `receiveCount`, `instanceId` e `deadLetteredAt`; **só depois do envio confirmado** apaga da origem. Se o envio falha, a mensagem fica na origem em backoff. A redrive policy com `maxReceiveCount` 10 é a rede de segurança contra crash em loop.
 - **Contrato do produtor:** `MessageGroupId = walletId` e `MessageDeduplicationId = messageId`. É otimização: a correção não depende disso, e o teste C4 manda cada mensagem num grupo diferente de propósito.
 - `bun run demo:send-message --wallet <id> --player <id>` publica uma mensagem de exemplo.
+- **Reprocessar a DLQ:** `bun run dlq list` mostra as mensagens visíveis com o motivo, sem consumi-las. `bun run dlq redrive --reason RETRIES_EXHAUSTED` (ou `WALLET_NOT_FOUND`, quando a wallet passa a existir com aquele id, como numa importação que preserva os ids; `--limit`, `--dry-run`) devolve à fila de entrada o mesmo corpo, no mesmo grupo, com novo id de deduplicação e o atributo `redrivenFrom`, e só então apaga da DLQ. Conflitos e mensagens inválidas precisam de correção na própria mensagem e são recusados; mensagens movidas pela redrive policy chegam sem motivo e ficam onde estão. A ordem de cada wallet é preservada: se uma mensagem fica retida, as seguintes da mesma wallet também ficam. Reenviar é seguro porque a inbox deduplica pelo `messageId`.
 
 ## Saída: outbox e publisher
 
@@ -313,6 +326,19 @@ Os eventos são gravados na tabela `outbox_messages` **na mesma transação** do
 4. Commit.
 
 Nenhum evento é publicado antes do commit da transação financeira (ele só existe na outbox depois do commit), e nenhum evento é descartado. Se o publisher cai entre o envio e o commit, o rollback devolve as linhas e outro publisher reenvia com o **mesmo `eventId`**: duplicata possível, perda impossível.
+
+**Retenção.** Cada operação deixa 2 eventos na outbox e, se veio pela fila, 1 mensagem na inbox; sem limpeza, as duas tabelas crescem para sempre. Um loop do worker (`RETENTION_ENABLED`) apaga em lotes de `RETENTION_BATCH_SIZE` (1.000), cada um numa transação curta:
+- os eventos **publicados** há mais de `OUTBOX_RETENTION_HOURS` (168 h);
+- as mensagens **processadas** da inbox recebidas há mais de `INBOX_RETENTION_HOURS` (360 h; o mínimo aceito é 168).
+
+Enquanto os lotes vêm cheios, o loop pausa `RETENTION_BATCH_PAUSE_MS` (250 ms) entre um e outro e continua do último registro apagado. Quando um lote vem incompleto, espera `RETENTION_INTERVAL_MS` (60 s) e recomeça do início. Pendentes e não processadas nunca são apagadas.
+- **Ritmo:** cada tabela perde no máximo `RETENTION_BATCH_SIZE / (duração do lote + pausa)` linhas por segundo, cerca de 3.600 com os padrões. É três vezes o que 600 req/s criam. O teto vale por réplica do worker: com N workers, o expurgo e a carga que ele põe no banco se multiplicam por N. Numa frota grande, basta ligar `RETENTION_ENABLED` em uma ou duas réplicas. Sem a pausa, pôr em dia uma base nunca limpa (7,7 milhões de eventos vencidos) levou o p95 da API de 6–12 para 63–77 ms. Com 250 ms, ficou no ruído (ver LOAD-TEST.md).
+- **Posição:** cada lote continua depois do último registro apagado: o id na outbox, e o `received_at` na inbox, inclusivo e truncado ao milissegundo para não pular ninguém. Recomeçar do início faria cada lote atravessar as entradas mortas dos anteriores até o autovacuum passar, o que só acontece com 20% da tabela morta. Num teste com 2 milhões de exclusões, o lote foi de 3,7 para 8,3 ms recomeçando do início e ficou em cerca de 3 ms com a posição. Um registro que fica elegível atrás da posição, como um evento publicado tarde ou uma linha travada por outra réplica, é apagado no ciclo seguinte.
+- **Outbox sem índice novo:** os ids são UUIDv7 gerados pela aplicação no momento do evento, então "criado antes do corte" é uma faixa da chave primária (`id < UUIDv7 do instante de corte`). Um índice em `published_at` também resolveria, mas custaria uma escrita a mais em toda publicação.
+- **Inbox com índice em `received_at`:** criado com `CREATE INDEX CONCURRENTLY` numa migration fora de transação, que não bloqueia escrita numa tabela grande.
+- **Várias réplicas:** a subconsulta de cada lote usa `FOR UPDATE SKIP LOCKED`, e os workers apagam lotes disjuntos.
+- **Por que é seguro:** o evento já foi entregue e o consumidor deduplica por `eventId`. A inbox só protege contra reentregas, que acontecem dentro da retenção da fila (4 dias por padrão). A proteção financeira continua na idempotency key e em `(provider, externalTransactionId)`, porque transações e lançamentos nunca são apagados.
+- **Métricas:** `outbox_events_purged_total` e `inbox_messages_purged_total`.
 
 ## Eventos e garantias de ordem
 
@@ -341,7 +367,17 @@ Um REFUND, ROLLBACK (ou WIN/LOSS com referência) cuja referência ainda não ex
 
 ## Reconciliação
 
-`POST /wallets/:walletId/reconciliation` lê numa única instrução SQL (um snapshot) o saldo gravado, a soma dos créditos, a soma dos débitos e o número de lançamentos, e calcula a diferença com o `Money`. Responde 200 com `walletId`, `storedBalance`, `calculatedBalance`, `difference`, `consistent` e `checkedEntries`; um ledger corrompido produz saldo calculado negativo com sinal (`-50.00`), não uma exceção. Divergências **não são corrigidas**: o endpoint só lê, conta `wallet_reconciliations_total{result}` e `wallet_reconciliation_divergences_total` e registra um log de alerta com `walletId` e o número de lançamentos (sem valores).
+`POST /wallets/:walletId/reconciliation` lê numa única instrução SQL (um snapshot) o saldo e a versão gravados, a soma dos créditos e dos débitos, o número de lançamentos, a primeira e a última versão do ledger e as quebras de cadeia. Uma quebra é um lançamento cujo `balance_before` difere do `balance_after` do anterior, ou cuja versão não é a anterior + 1. O cálculo do saldo usa o `Money`.
+
+A resposta traz os seis campos do enunciado (`walletId`, `storedBalance`, `calculatedBalance`, `difference`, `consistent` e `checkedEntries`) e mais dois:
+- `chainBreaks`: quantas quebras de cadeia;
+- `versionConsistent`: se a versão da wallet é a do último lançamento (ou 1 sem lançamentos) e se o primeiro lançamento é a versão 1 ou 2.
+
+`consistent` é o veredito geral: saldo igual ao ledger, nenhuma quebra e versão coerente. Assim, uma cadeia quebrada nunca aparece como consistente só porque as somas fecham. Um ledger corrompido produz saldo calculado negativo com sinal (`-50.00`), não uma exceção. Divergências **não são corrigidas**: o endpoint só lê, conta `wallet_reconciliations_total{result}` e `wallet_reconciliation_divergences_total{kind}` (`balance`, `chain` ou `version`) e registra um log de erro por tipo, com `walletId` e contagens, nunca valores.
+
+**Custo.** A leitura percorre o ledger inteiro da wallet pelo índice `(wallet_id, wallet_version)`, cerca de 0,6 s por milhão de lançamentos (medido numa wallet com 1.000.001 lançamentos, ver LOAD-TEST.md).
+- **Limite atual:** com o `statement_timeout` de 10 s, cabem uns 10 milhões de lançamentos por wallet com os dados no cache. Numa base muito maior, com os lançamentos de uma wallet espalhados um por página, o custo passa a ser de leitura em disco.
+- **Por que sem checkpoint:** wallets de jogador têm de dezenas a milhares de lançamentos. Uma conta de casa ou de bot com dezenas de milhões pediria checkpoints verificados: somas até uma versão, gravadas por uma reconciliação completa, com a conferência completa repetida periodicamente.
 
 ## Observabilidade
 
@@ -356,12 +392,13 @@ Um REFUND, ROLLBACK (ou WIN/LOSS com referência) cuja referência ainda não ex
 | `db_transaction_retries_total` | contador | `sqlstate` (`23505`, `40P01`) |
 | `outbox_publish_retries_total` · `pending_reference_retries_total` | contador | — |
 | `wallet_lock_timeouts_total` · `db_deadlocks_total` · `wallet_version_conflicts_total` | contador | — (o último deve ficar em zero) |
-| `wallet_reconciliations_total` · `wallet_reconciliation_divergences_total` | contador | `result` · — |
+| `wallet_reconciliations_total` · `wallet_reconciliation_divergences_total` | contador | `result` · `kind` (`balance`, `chain`, `version`) |
 | `pending_reference_transactions` · `outbox_pending_events` · `outbox_oldest_pending_age_seconds` · `sqs_dlq_approximate_messages` | gauge, amostrado pelo worker a cada 5 s | — |
 | `wallet_lock_wait_seconds` · `outbox_publish_delay_seconds` | histograma | — |
 | `wager_processing_duration_seconds` | histograma | `channel`, `kind`, `outcome` |
 | `http_request_duration_seconds` | histograma | `method`, `route`, `status` (os streams SSE ficam de fora: duram minutos e distorceriam a latência das requisições) |
 | `wallet_event_streams` · `wallet_events_streamed_total` · `wallet_event_delivery_seconds` | gauge · contador · histograma | — (streams abertos na réplica, lançamentos entregues e tempo do lançamento até o stream) |
+| `outbox_events_purged_total` · `inbox_messages_purged_total` | contador | — (linhas apagadas pela retenção) |
 
 Famílias exigidas pelo enunciado: transações por status (`wager_transactions_total`), duplicatas detectadas (`idempotency_replays_total`, `inbox_duplicates_total`), retries (`sqs_message_retries_total`, `db_transaction_retries_total`, `outbox_publish_retries_total`, `pending_reference_retries_total`), mensagens em DLQ (`sqs_messages_dead_lettered_total`, `sqs_dlq_approximate_messages`), conflitos de lock (`wallet_lock_timeouts_total`, `wallet_lock_wait_seconds`, `db_deadlocks_total`, `wallet_version_conflicts_total`), outbox lag (`outbox_oldest_pending_age_seconds`, `outbox_pending_events`, `outbox_publish_delay_seconds`) e latência de processamento (`wager_processing_duration_seconds`, `http_request_duration_seconds`).
 
@@ -394,7 +431,7 @@ Num SIGKILL nada disso roda, e a correção vem do banco: a transação aberta s
 
 ## Provas por teste
 
-A suíte (`bun run test`, 990 testes, cerca de 2 minutos) roda contra PostgreSQL e MiniStack reais; a da versão avaliada (799 testes) passou 10 vezes seguidas sem falha. Cada suíte de integração e de concorrência usa um banco criado para ela e filas com prefixo único. **Todo teste que opera o sistema** — pelos casos de uso, pela API HTTP, pelo consumidor, pelo scheduler, pelo publisher ou por processos reais — termina com um verificador que confere, para cada wallet do banco: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo. Só ficam de fora as wallets corrompidas de propósito pelos testes de reconciliação, excluídas pelo nome. Os testes de schema e de repositório montam linhas à mão para exercitar uma constraint ou uma primitiva por vez (por exemplo, um `UPDATE` de saldo sem lançamento), então ficam fora por construção.
+A suíte (`bun run test`, 1.073 testes, cerca de 2,7 minutos) roda contra PostgreSQL e MiniStack reais; a da versão avaliada (799 testes) passou 10 vezes seguidas sem falha. Cada suíte de integração e de concorrência usa um banco criado para ela e filas com prefixo único. **Todo teste que opera o sistema** — pelos casos de uso, pela API HTTP, pelo consumidor, pelo scheduler, pelo publisher ou por processos reais — termina com um verificador que confere, para cada wallet do banco: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo. Só ficam de fora as wallets corrompidas de propósito pelos testes de reconciliação, excluídas pelo nome. Os testes de schema e de repositório montam linhas à mão para exercitar uma constraint ou uma primitiva por vez. Desde as constraint triggers saldo ⇔ ledger, essas linhas também formam estados coerentes no commit.
 
 | Id | Cenário | Onde |
 |---|---|---|
@@ -432,7 +469,7 @@ A suíte (`bun run test`, 990 testes, cerca de 2 minutos) roda contra PostgreSQL
 | sem débito ou crédito duplicado | idempotency key única + replay | `UNIQUE (provider_id, external_transaction_id)`, inbox, `UNIQUE (wallet_id, transaction_id)` no ledger | C1, C4, C5, I5 |
 | saldo nunca negativo | `SettlementPolicy` sob lock | `CHECK` de sinal no saldo e no ledger | C2 |
 | sem lost update | `SELECT … FOR UPDATE` na wallet | versão esperada no `UPDATE`; `UNIQUE (wallet_id, wallet_version)` | C2, C4 |
-| ledger imutável e coerente | só `INSERT` | triggers; `CHECK` aritmético; FKs compostas de moeda | I2 |
+| ledger imutável e coerente | só `INSERT` | triggers de imutabilidade; constraint triggers de cadeia e de saldo; `CHECK` aritmético; FKs compostas de moeda | I2 |
 | reversão uma vez por tipo | checagem sob lock | índice único parcial | C9 |
 | evento só depois do commit e nunca perdido | outbox na mesma transação | publisher at-least-once com `eventId` estável | I4, I7, C6 |
 | mensagem processada uma vez | inbox na mesma transação do efeito; ack depois do commit | idempotency key | I5, C5, matriz |
@@ -534,7 +571,7 @@ Cada réplica aceita até `STREAM_MAX_STREAMS` (1000) streams; acima disso respo
 |---|---|
 | Evento `WagerTransactionFailed` | **entregue**: todo desfecho terminal assíncrono é anunciado |
 | 409 de wallet duplicada com o `walletId` existente | **entregue**: o cliente pode repetir a criação com segurança |
-| Triggers de reforço saldo ⇔ ledger | **descartado nesta entrega.** As garantias que o enunciado exige no schema (unicidade, imutabilidade, não negatividade) já estão lá, e o "saldo = ledger" tem três camadas (lock, versão esperada, `UNIQUE (wallet_id, wallet_version)`), conferidas depois de todo teste. O reforço completo seria uma migration nova com constraint triggers diferidas: no lançamento, `balance_before` igual ao `balance_after` da versão anterior (ou zero na primeira); na wallet, saldo igual ao `balance_after` do lançamento da sua versão. Ele exigiria refazer os fixtures dos testes de schema, que gravam wallets e lançamentos soltos, e o risco sobre uma suíte já verificada não compensava no prazo. |
+| Triggers de reforço saldo ⇔ ledger | **entregue na Etapa 4**, depois da versão avaliada, com os fixtures de schema e de repositório refeitos para gravar estados coerentes (ver "Saldo ⇔ ledger no banco"). Na versão avaliada, o "saldo = ledger" tinha três camadas (lock, versão esperada, `UNIQUE (wallet_id, wallet_version)`), conferidas depois de todo teste |
 | Teste de carga | fora da versão avaliada; entregue depois, em [LOAD-TEST.md](LOAD-TEST.md) |
 | IdP | fora da versão avaliada; entregue depois com Keycloak (ver [Autenticação e autorização](#autenticação-e-autorização)) |
 | Double-entry, OpenTelemetry, dashboard | **não**, decididos no plano |

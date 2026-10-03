@@ -31,6 +31,27 @@ describe('PollingLoop', () => {
     expect(calls[3]! - calls[0]!).toBeLessThan(150);
   });
 
+  test('pauses between steps that found work when a busy delay is set', async () => {
+    const results = [true, true, true, false];
+    const calls: number[] = [];
+    const loop = new PollingLoop({
+      step: async () => {
+        calls.push(performance.now());
+        return results.shift() ?? false;
+      },
+      idleDelayMs: 1000,
+      busyDelayMs: 60,
+      errorBackoff: fastBackoff,
+    });
+
+    loop.start();
+    await waitUntil(() => calls.length >= 4);
+    await loop.stop();
+
+    const gaps = calls.slice(1).map((at, index) => at - calls[index]!);
+    expect(gaps.every((gap) => gap >= 55)).toBe(true);
+  });
+
   test('backs off after failures, reports them and recovers after a success', async () => {
     const failures: number[] = [];
     let call = 0;

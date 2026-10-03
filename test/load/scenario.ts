@@ -14,7 +14,7 @@ import {
   EventSink,
   Sampler,
   consistencyOf,
-  outboxEvents,
+  outboxEventsSince,
   processedAt,
   publishSpanSeconds,
   scrape,
@@ -23,8 +23,9 @@ import {
   waitForDrain,
 } from './collectors';
 import type { ScenarioConfig } from './config';
+import { ensureSeedTemplate, sampleSeededWallets } from './seed';
 import { StreamWatch } from './streams';
-import { pauseDatabase, resumeDatabase } from './infra';
+import { LOAD_DATABASE_URL, pauseDatabase, resumeDatabase } from './infra';
 import type { Sample } from './prometheus';
 import {
   type RatePhase,
@@ -372,7 +373,20 @@ export async function runScenario(
   logDir: string,
   keepData: boolean,
 ): Promise<ScenarioResult> {
-  const storage = await createStorage(id);
+  const template =
+    config.seedWallets > 0
+      ? await ensureSeedTemplate(
+          {
+            wallets: config.seedWallets,
+            operations: config.seedOperations,
+            hotEntries: config.seedHotEntries,
+            events: config.seedEvents,
+          },
+          { adminUrl: LOAD_DATABASE_URL, log },
+        )
+      : undefined;
+  const storage = await createStorage(id, template);
+  const startedAt = new Date();
   const sink = new EventSink(storage);
   sink.start();
   const drainTimeoutMs = config.drainTimeoutSeconds * 1000;
@@ -382,6 +396,7 @@ export async function runScenario(
     LOG_LEVEL: config.logLevel,
     DB_POOL_SIZE: String(config.dbPoolSize),
     METRICS_SAMPLE_INTERVAL_MS: '1000',
+    ...config.appEnv,
   };
   const processes: AppProcess[] = [];
   let watch: StreamWatch | undefined;
@@ -392,7 +407,12 @@ export async function runScenario(
       ),
     );
     processes.push(...apis);
-    const [hot, ...wallets] = await seedWallets(apis[0]!, config.wallets + 1);
+    const [hot, ...wallets] =
+      template === undefined
+        ? await seedWallets(apis[0]!, config.wallets + 1)
+        : await sampleSeededWallets(storage.sql, config.wallets).then(
+            (sample) => [sample.hot, ...sample.wallets],
+          );
     const context: Context = {
       config,
       storage,
@@ -414,7 +434,11 @@ export async function runScenario(
       context.workers.push(...workers);
       processes.push(...workers);
     };
-    log(`  ${config.wallets + 1} wallets opened`);
+    log(
+      template === undefined
+        ? `  ${config.wallets + 1} wallets opened`
+        : `  ${config.wallets + 1} of ${config.seedWallets + (config.seedHotEntries > 0 ? 1 : 0)} seeded wallets sampled`,
+    );
     if (config.subscribers > 0) {
       watch = await StreamWatch.open(
         apis,
@@ -571,7 +595,10 @@ export async function runScenario(
     sampler.stop();
     const streams = await watch?.settle(storage, 10_000);
     const after = await scrape([...apis, ...context.workers]);
-    await sink.catchUp(await outboxEvents(storage), drainTimeoutMs);
+    await sink.catchUp(
+      await outboxEventsSince(storage.sql, startedAt),
+      drainTimeoutMs,
+    );
     await sink.stop();
     return {
       config,
@@ -583,7 +610,7 @@ export async function runScenario(
       publish,
       streams,
       server: serverResult(before, after, sampler),
-      consistency: await consistencyOf(storage, drain, sink),
+      consistency: await consistencyOf(storage, drain, sink, startedAt),
       generator: {
         cpuPercent: ((cpu.user + cpu.system) / 1000 / wallMs) * 100,
       },

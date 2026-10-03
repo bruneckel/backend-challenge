@@ -1,4 +1,5 @@
 import type { InboxMessage } from '@messaging/domain/inbox-message';
+import type { PurgedBatch } from './purged-batch';
 
 export type InboxRecording =
   { recorded: true } | { recorded: false; existing: InboxMessage };
@@ -9,4 +10,9 @@ export interface InboxRepository {
     message: InboxMessage,
     transactionId: string | undefined,
   ): Promise<void>;
+  deleteProcessedBefore(
+    cutoff: Date,
+    limit: number,
+    from?: Date,
+  ): Promise<PurgedBatch<Date>>;
 }

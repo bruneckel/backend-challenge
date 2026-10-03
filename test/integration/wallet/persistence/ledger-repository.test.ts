@@ -26,11 +26,12 @@ describe('MikroOrmLedgerRepository', () => {
     await harness.unitOfWork.run((scope) => storeOpenedWallet(scope, opened));
     const second = settledBet(opened.wallet, '10.00');
     const third = settledBet(opened.wallet, '20.00');
-    await harness.unitOfWork.run(async ({ transactions, ledger }) => {
+    await harness.unitOfWork.run(async ({ transactions, ledger, wallets }) => {
       for (const { bet, entry } of [second, third]) {
         await transactions.insert(bet);
         await ledger.append(entry);
       }
+      await wallets.applyBalanceChange(opened.wallet, 1);
     });
 
     const newest = await harness.unitOfWork.run(({ ledger }) =>
@@ -53,11 +54,12 @@ describe('MikroOrmLedgerRepository', () => {
     await harness.unitOfWork.run((scope) => storeOpenedWallet(scope, opened));
     const second = settledBet(opened.wallet, '10.00');
     const third = settledBet(opened.wallet, '20.00');
-    await harness.unitOfWork.run(async ({ transactions, ledger }) => {
+    await harness.unitOfWork.run(async ({ transactions, ledger, wallets }) => {
       for (const { bet, entry } of [second, third]) {
         await transactions.insert(bet);
         await ledger.append(entry);
       }
+      await wallets.applyBalanceChange(opened.wallet, 1);
     });
     const after = (version: number, limit: number) =>
       harness.unitOfWork.run(({ ledger }) =>
@@ -92,10 +94,13 @@ describe('MikroOrmLedgerRepository', () => {
       settledBet(first.wallet, '2.00'),
       settledBet(second.wallet, '3.00'),
     ];
-    await harness.unitOfWork.run(async ({ transactions, ledger }) => {
+    await harness.unitOfWork.run(async ({ transactions, ledger, wallets }) => {
       for (const { bet, entry } of bets) {
         await transactions.insert(bet);
         await ledger.append(entry);
+      }
+      for (const opened of [first, second]) {
+        await wallets.applyBalanceChange(opened.wallet, 1);
       }
     });
     const cursors = [

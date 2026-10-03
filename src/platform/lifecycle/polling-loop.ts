@@ -3,6 +3,7 @@ import type { ExponentialBackoff } from '@shared/domain/exponential-backoff';
 export interface PollingLoopOptions {
   step: (signal: AbortSignal) => Promise<boolean>;
   idleDelayMs: number;
+  busyDelayMs?: number;
   errorBackoff: ExponentialBackoff;
   onError?: (error: unknown, consecutiveFailures: number) => void;
 }
@@ -30,7 +31,9 @@ export class PollingLoop {
       try {
         const didWork = await this.options.step(signal);
         consecutiveFailures = 0;
-        delayMs = didWork ? 0 : this.options.idleDelayMs;
+        delayMs = didWork
+          ? (this.options.busyDelayMs ?? 0)
+          : this.options.idleDelayMs;
       } catch (error) {
         consecutiveFailures += 1;
         this.options.onError?.(error, consecutiveFailures);

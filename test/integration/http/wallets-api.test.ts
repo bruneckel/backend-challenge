@@ -8,6 +8,7 @@ import {
 } from 'bun:test';
 import { inconsistentWallets } from '@test/support/invariants';
 import { type ApiHarness, startApi } from '@test/support/api';
+import { bypassingLedgerGuards } from '@test/support/ledger-states';
 
 let api: ApiHarness;
 const corruptedOnPurpose: string[] = [];
@@ -350,14 +351,19 @@ describe('POST /wallets/:walletId/reconciliation', () => {
       difference: brl('0.00'),
       consistent: true,
       checkedEntries: 2,
+      chainBreaks: 0,
+      versionConsistent: true,
     });
   });
 
   test('answers 200 flagging a stored balance that drifted from the ledger', async () => {
     const wallet = await openWallet('100.00');
     corruptedOnPurpose.push(wallet.id);
-    await api.database
-      .sql`update wallets set balance_amount = '99.00' where id = ${wallet.id}`;
+    await bypassingLedgerGuards(
+      api.database.sql,
+      (tx) =>
+        tx`update wallets set balance_amount = '99.00' where id = ${wallet.id}`,
+    );
 
     const response = await api.request(
       'POST',

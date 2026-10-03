@@ -9,5 +9,6 @@ export enum FailureCode {
   ReferenceAmountMismatch = 'REFERENCE_AMOUNT_MISMATCH',
   ReferenceNotProcessed = 'REFERENCE_NOT_PROCESSED',
   ReferenceAlreadyReversed = 'REFERENCE_ALREADY_REVERSED',
+  BalanceLimitExceeded = 'BALANCE_LIMIT_EXCEEDED',
   ProcessingFailed = 'PROCESSING_FAILED',
 }

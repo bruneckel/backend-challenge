@@ -80,6 +80,8 @@ export interface ServerResult {
   maxOutboxPending: number;
   maxConnections: number;
   publishedEvents: number;
+  purgedEvents: number;
+  purgedMessages: number;
 }
 
 export interface ConsistencyResult {

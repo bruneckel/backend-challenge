@@ -33,7 +33,7 @@ const insertOutbox = (row: Row) =>
 
 describe('inbox_messages table', () => {
   test('records a message linked to the transaction it produced', async () => {
-    const wallet = walletRow();
+    const wallet = walletRow({ balance_amount: '0.00' });
     await insertRow(database.sql, 'wallets', wallet);
     const transaction = transactionRow(wallet);
     await insertRow(database.sql, 'wager_transactions', transaction);

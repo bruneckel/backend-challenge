@@ -84,6 +84,13 @@ describe('Money arithmetic', () => {
     );
   });
 
+  test('knows whether an amount fits the storage limit', () => {
+    const largest = brl('99999999999999999.99');
+
+    expect(largest.isWithinLimit()).toBe(true);
+    expect(largest.add(brl('0.01')).isWithinLimit()).toBe(false);
+  });
+
   test('subtracts', () => {
     expect(brl('100.00').subtract(brl('80.00')).toString()).toBe('20.00');
   });

@@ -89,8 +89,61 @@ describe('parseLoadArgs', () => {
       ['--profile', 'backlog', '--channel', 'sqs', '--subscribers', '1'],
       'backlog does not open streams',
     ],
+    [
+      ['--seed-wallets', '100', '--wallets', '200'],
+      'wallets must not exceed seedWallets',
+    ],
+    [['--seed-operations=-1'], 'seedOperations must be a non-negative integer'],
+    [['--app-env', 'retention'], '--app-env takes NAME=VALUE'],
   ])('refuses %j', (argv, message) => {
     expect(() => parseLoadArgs(argv)).toThrow(message);
+  });
+
+  test('reads the seed flags', () => {
+    const [scenario] = parseLoadArgs([
+      '--seed-wallets',
+      '1000',
+      '--seed-operations',
+      '6',
+      '--seed-hot-entries',
+      '50',
+      '--seed-events',
+    ]).scenarios;
+
+    expect(scenario).toMatchObject({
+      seedWallets: 1000,
+      seedOperations: 6,
+      seedHotEntries: 50,
+      seedEvents: true,
+    });
+  });
+
+  test('passes environment variables to the application processes', () => {
+    const [scenario] = parseLoadArgs([
+      '--app-env',
+      'RETENTION_ENABLED=false',
+      '--app-env',
+      'DB_POOL_SIZE=20',
+    ]).scenarios;
+
+    expect(scenario?.appEnv).toEqual({
+      RETENTION_ENABLED: 'false',
+      DB_POOL_SIZE: '20',
+    });
+  });
+
+  test('adds environment variables to the ones a preset sets', () => {
+    const scenarios = parseLoadArgs([
+      '--preset',
+      'retention',
+      '--app-env',
+      'RETENTION_BATCH_SIZE=500',
+    ]).scenarios;
+
+    expect(scenarios.map((scenario) => scenario.appEnv)).toEqual([
+      { RETENTION_BATCH_SIZE: '500' },
+      { RETENTION_ENABLED: 'false', RETENTION_BATCH_SIZE: '500' },
+    ]);
   });
 
   test('every preset scenario is valid on its own', () => {

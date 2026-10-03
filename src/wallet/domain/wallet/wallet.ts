@@ -7,6 +7,10 @@ export class InsufficientFundsError extends DomainError {
   override readonly code = 'INSUFFICIENT_FUNDS';
 }
 
+export class BalanceLimitExceededError extends DomainError {
+  override readonly code = 'BALANCE_LIMIT_EXCEEDED';
+}
+
 export class NonPositiveMovementError extends DomainError {
   override readonly code = 'NON_POSITIVE_MOVEMENT';
 }
@@ -129,8 +133,18 @@ export class Wallet {
     );
   }
 
+  canCredit(money: Money): boolean {
+    this.assertSameCurrency(money);
+    return this._balance.add(money).isWithinLimit();
+  }
+
   credit(money: Money, context: MovementContext): WalletLedgerEntry {
     this.assertMovement(money);
+    if (!this.canCredit(money)) {
+      throw new BalanceLimitExceededError(
+        'The balance would go past the storage limit',
+      );
+    }
     return this.apply(
       LedgerDirection.Credit,
       money,

@@ -3,6 +3,7 @@ import { AT, LATER, brl, usd, walletWith } from '@test/support/wallet-fixtures';
 import { LedgerDirection } from '@wallet/domain/ledger/ledger-direction';
 import { CurrencyMismatchError } from '@wallet/domain/money/money';
 import {
+  BalanceLimitExceededError,
   InsufficientFundsError,
   NegativeInitialBalanceError,
   NonPositiveMovementError,
@@ -107,6 +108,24 @@ describe('Wallet.credit', () => {
     expect(entry.direction).toBe(LedgerDirection.Credit);
     expect(entry.balanceBefore.toString()).toBe('20.00');
     expect(entry.balanceAfter.toString()).toBe('100.00');
+  });
+
+  test('tells whether a credit keeps the balance within the storage limit', () => {
+    const wallet = walletWith('99999999999999990.00');
+
+    expect(wallet.canCredit(brl('9.99'))).toBe(true);
+    expect(wallet.canCredit(brl('10.00'))).toBe(false);
+    expect(() => wallet.canCredit(usd('1.00'))).toThrow(CurrencyMismatchError);
+  });
+
+  test('refuses a credit past the storage limit and leaves the wallet untouched', () => {
+    const wallet = walletWith('99999999999999990.00');
+
+    expect(() => wallet.credit(brl('10.00'), movement)).toThrow(
+      BalanceLimitExceededError,
+    );
+    expect(wallet.balance.toString()).toBe('99999999999999990.00');
+    expect(wallet.version).toBe(1);
   });
 });
 

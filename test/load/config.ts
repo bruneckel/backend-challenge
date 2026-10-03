@@ -30,6 +30,11 @@ export interface ScenarioConfig {
   logLevel: string;
   dbPoolSize: number;
   subscribers: number;
+  seedWallets: number;
+  seedOperations: number;
+  seedHotEntries: number;
+  seedEvents: boolean;
+  appEnv: Record<string, string>;
 }
 
 export interface LoadRun {
@@ -65,6 +70,11 @@ export const DEFAULT_SCENARIO: ScenarioConfig = {
   logLevel: 'info',
   dbPoolSize: 10,
   subscribers: 0,
+  seedWallets: 0,
+  seedOperations: 4,
+  seedHotEntries: 0,
+  seedEvents: false,
+  appEnv: {},
 };
 
 type PresetScenario = Partial<ScenarioConfig> & { name: string };
@@ -122,6 +132,57 @@ export const PRESETS: Record<string, PresetScenario[]> = {
       warmupSeconds: 1,
       durationSeconds: 15,
       outageSeconds: 3,
+    },
+  ],
+  scale: [
+    {
+      name: 'scale-http-saturation-1x1',
+      profile: 'saturation',
+      seedWallets: 1_000_000,
+      wallets: 200_000,
+      concurrencySteps: [16, 32, 64],
+    },
+    {
+      name: 'scale-http-saturation-3x3',
+      profile: 'saturation',
+      apiInstances: 3,
+      workerInstances: 3,
+      seedWallets: 1_000_000,
+      wallets: 200_000,
+      concurrencySteps: [16, 32, 64],
+    },
+    {
+      name: 'scale-mixed-sustained-3x3',
+      channel: 'mixed',
+      apiInstances: 3,
+      workerInstances: 3,
+      seedWallets: 1_000_000,
+      wallets: 200_000,
+      hotShare: 0.2,
+      replayShare: 0.05,
+      rate: 300,
+      durationSeconds: 60,
+    },
+  ],
+  retention: [
+    {
+      name: 'retention-on-1x1',
+      seedWallets: 1_000_000,
+      seedEvents: true,
+      wallets: 200_000,
+      rate: 600,
+      durationSeconds: 120,
+      drainTimeoutSeconds: 60,
+    },
+    {
+      name: 'retention-off-1x1',
+      seedWallets: 1_000_000,
+      seedEvents: true,
+      wallets: 200_000,
+      rate: 600,
+      durationSeconds: 120,
+      drainTimeoutSeconds: 60,
+      appEnv: { RETENTION_ENABLED: 'false' },
     },
   ],
   baseline: [
@@ -250,6 +311,11 @@ const OPTIONS = {
   'log-level': { type: 'string' },
   pool: { type: 'string' },
   subscribers: { type: 'string' },
+  'seed-wallets': { type: 'string' },
+  'seed-operations': { type: 'string' },
+  'seed-hot-entries': { type: 'string' },
+  'seed-events': { type: 'boolean' },
+  'app-env': { type: 'string', multiple: true },
 } as const;
 
 const NUMERIC_FLAGS: ReadonlyArray<
@@ -275,12 +341,33 @@ const NUMERIC_FLAGS: ReadonlyArray<
   ['max-p99-ms', 'maxP99Ms'],
   ['pool', 'dbPoolSize'],
   ['subscribers', 'subscribers'],
+  ['seed-wallets', 'seedWallets'],
+  ['seed-operations', 'seedOperations'],
+  ['seed-hot-entries', 'seedHotEntries'],
 ];
 
+const APP_ENV = /^([A-Z][A-Z0-9_]*)=(.*)$/;
+
+function appEnvFrom(entries: readonly string[]): Record<string, string> {
+  return Object.fromEntries(
+    entries.map((entry) => {
+      const match = APP_ENV.exec(entry);
+      if (match === null) {
+        throw new Error('--app-env takes NAME=VALUE');
+      }
+      return [match[1]!, match[2]!];
+    }),
+  );
+}
+
 function overridesFrom(
-  values: Record<string, string | boolean | undefined>,
+  values: Record<string, string | boolean | string[] | undefined>,
 ): Partial<ScenarioConfig> {
   const overrides: Record<string, unknown> = {};
+  const appEnv = values['app-env'];
+  if (Array.isArray(appEnv)) {
+    overrides.appEnv = appEnvFrom(appEnv);
+  }
   for (const [flag, field] of NUMERIC_FLAGS) {
     const value = values[flag];
     if (typeof value === 'string') {
@@ -299,6 +386,9 @@ function overridesFrom(
   }
   if (typeof values['log-level'] === 'string') {
     overrides.logLevel = values['log-level'];
+  }
+  if (values['seed-events'] === true) {
+    overrides.seedEvents = true;
   }
   if (typeof values.steps === 'string') {
     overrides.concurrencySteps = values.steps.split(',').map(Number);
@@ -381,6 +471,18 @@ export function validateScenario(scenario: ScenarioConfig): ScenarioConfig {
   ) {
     throw new Error(`${scenario.profile} does not open streams`);
   }
+  for (const field of [
+    'seedWallets',
+    'seedOperations',
+    'seedHotEntries',
+  ] as const) {
+    if (!Number.isInteger(scenario[field]) || scenario[field] < 0) {
+      throw new Error(`${field} must be a non-negative integer`);
+    }
+  }
+  if (scenario.seedWallets > 0 && scenario.wallets > scenario.seedWallets) {
+    throw new Error('wallets must not exceed seedWallets');
+  }
   if (scenario.profile === 'saturation' && scenario.channel !== 'http') {
     throw new Error('saturation needs the http channel');
   }
@@ -415,6 +517,7 @@ export function parseLoadArgs(argv: readonly string[]): LoadRun {
       ...DEFAULT_SCENARIO,
       ...scenario,
       ...overrides,
+      appEnv: { ...scenario.appEnv, ...overrides.appEnv },
     }));
   }
   if (values.only !== undefined) {

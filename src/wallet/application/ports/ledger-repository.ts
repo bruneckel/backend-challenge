@@ -13,9 +13,13 @@ export interface LedgerCursor {
 
 export interface ReconciliationSnapshot {
   storedBalance: Money;
+  storedVersion: number;
   credits: Money;
   debits: Money;
   entries: number;
+  firstEntryVersion: number | null;
+  lastEntryVersion: number | null;
+  chainBreaks: number;
 }
 
 export interface LedgerRepository {
