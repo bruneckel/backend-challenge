@@ -6,6 +6,7 @@ import type { LedgerEntryView, WalletView } from '@wallet/application/views';
 import { StreamCapacityExceededError } from '@wallet/infrastructure/streaming/stream-errors';
 import {
   type EventSink,
+  type LedgerCursor,
   type WalletEventFeed,
   WalletEventHub,
   type WalletEventHubSettings,
@@ -36,6 +37,7 @@ class FakeFeed implements WalletEventFeed {
   failures = 0;
   delayMs = 0;
   ledgerReads = 0;
+  batchReads = 0;
 
   open(version = 1): string {
     const id = Bun.randomUUIDv7();
@@ -83,6 +85,29 @@ class FakeFeed implements WalletEventFeed {
     return (this.ledgers.get(walletId) ?? [])
       .filter((item) => item.walletVersion > afterVersion)
       .slice(0, limit);
+  }
+
+  async getLedgerAfterMany(
+    cursors: readonly LedgerCursor[],
+    limit: number,
+  ): Promise<ReadonlyMap<string, LedgerEntryView[]>> {
+    this.batchReads += 1;
+    if (this.failures > 0) {
+      this.failures -= 1;
+      throw new Error('database unavailable');
+    }
+    const rows = cursors
+      .flatMap(({ walletId, afterVersion }) =>
+        (this.ledgers.get(walletId) ?? [])
+          .filter((item) => item.walletVersion > afterVersion)
+          .map((item) => ({ walletId, item })),
+      )
+      .slice(0, limit);
+    const grouped = new Map<string, LedgerEntryView[]>();
+    for (const { walletId, item } of rows) {
+      grouped.set(walletId, [...(grouped.get(walletId) ?? []), item]);
+    }
+    return grouped;
   }
 
   async getWalletVersions(
@@ -165,6 +190,7 @@ function setup(overrides: Partial<WalletEventHubSettings> = {}) {
       pageSize: 2,
       retryMs: 1500,
       sweepIntervalMs: 60_000,
+      sweepBatchSize: 10,
       heartbeatIntervalMs: 60_000,
       ...overrides,
     },
@@ -336,6 +362,65 @@ describe('WalletEventHub', () => {
     await Bun.sleep(30);
 
     expect(feed.ledgerReads).toBe(1);
+    expect(feed.batchReads).toBe(0);
+  });
+
+  test('catches up every changed wallet of a sweep in one read', async () => {
+    const { feed, hub, subscribe } = setup();
+    const walletIds = [feed.open(1), feed.open(1), feed.open(1)];
+    const sinks = await Promise.all(walletIds.map((id) => subscribe(id)));
+    await waitUntil(() => feed.ledgerReads === 3);
+    for (const walletId of walletIds) {
+      feed.append(walletId, 2);
+    }
+
+    await hub.sweep();
+
+    expect(feed.batchReads).toBe(1);
+    expect(feed.ledgerReads).toBe(3);
+    expect(sinks.map((sink) => sink.versions())).toEqual([
+      [2, 3],
+      [2, 3],
+      [2, 3],
+    ]);
+  });
+
+  test('leaves what does not fit in one sweep to the next one', async () => {
+    const { feed, hub, subscribe } = setup({ sweepBatchSize: 3 });
+    const walletId = feed.open(1);
+    const sink = await subscribe(walletId);
+    await waitUntil(() => feed.ledgerReads === 1);
+    feed.append(walletId, 5);
+
+    await hub.sweep();
+    const first = sink.versions();
+    await hub.sweep();
+
+    expect(first).toEqual([2, 3, 4]);
+    expect(sink.versions()).toEqual([2, 3, 4, 5, 6]);
+  });
+
+  test('keeps a client resumed during a sweep out of entries it is not ready for', async () => {
+    const { feed, hub, subscribe } = setup();
+    const walletId = feed.open(1);
+    feed.append(walletId, 2);
+    const live = await subscribe(walletId);
+    const slow = await subscribe(walletId, 1);
+    await waitUntil(() => slow.versions().length === 2);
+    slow.accepting = false;
+    feed.append(walletId, 2);
+    hub.wake(walletId);
+    await waitUntil(() => slow.versions().length === 3);
+    feed.append(walletId, 2);
+
+    const sweep = hub.sweep();
+    slow.drain();
+    await sweep;
+    await waitUntil(() => slow.versions().length === 6);
+    await Bun.sleep(30);
+
+    expect(live.versions()).toEqual([4, 5, 6, 7]);
+    expect(slow.versions()).toEqual([2, 3, 4, 5, 6, 7]);
   });
 
   test('sends keep-alive comments', async () => {

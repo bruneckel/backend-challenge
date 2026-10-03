@@ -106,6 +106,30 @@ describe('WalletQueries', () => {
     });
   });
 
+  test('reads the ledger after several cursors at once, grouped by wallet', async () => {
+    const quiet = await openWalletWith(wagering, '100.00');
+    const busy = await openWalletWith(wagering, '100.00');
+    await wagering.submit.execute(commandFor(quiet, Bet, '1.00'));
+    await wagering.submit.execute(commandFor(busy, Bet, '2.00'));
+    await wagering.submit.execute(commandFor(busy, Win, '3.00'));
+
+    const grouped = await wagering.queries.getLedgerAfterMany(
+      [
+        { walletId: quiet.id, afterVersion: 1 },
+        { walletId: busy.id, afterVersion: 1 },
+      ],
+      10,
+    );
+
+    expect(grouped.get(quiet.id)?.map((item) => item.walletVersion)).toEqual([
+      2,
+    ]);
+    expect(grouped.get(busy.id)?.map((item) => item.walletVersion)).toEqual([
+      2, 3,
+    ]);
+    expect((await wagering.queries.getLedgerAfterMany([], 10)).size).toBe(0);
+  });
+
   test('reads the current version of the given wallets', async () => {
     const quiet = await openWalletWith(wagering, '100.00');
     const busy = await openWalletWith(wagering, '100.00');

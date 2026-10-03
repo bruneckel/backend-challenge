@@ -5,9 +5,12 @@ import type {
 import { RequestValidationError } from '@platform/http/request-errors';
 import type { Logger } from '@shared/application/logger';
 import type { Metrics } from '@shared/application/metrics';
+import type { LedgerCursor } from '@wallet/application/ports/ledger-repository';
 import type { LedgerEntryView, WalletView } from '@wallet/application/views';
 import { KEEP_ALIVE, retryAfter, serverSentEvent } from './server-sent-events';
 import { StreamCapacityExceededError } from './stream-errors';
+
+export type { LedgerCursor };
 
 export interface WalletEventFeed {
   getWallet(walletId: string): Promise<WalletView>;
@@ -16,6 +19,10 @@ export interface WalletEventFeed {
     afterVersion: number,
     limit: number,
   ): Promise<LedgerEntryView[]>;
+  getLedgerAfterMany(
+    cursors: readonly LedgerCursor[],
+    limit: number,
+  ): Promise<ReadonlyMap<string, LedgerEntryView[]>>;
   getWalletVersions(
     walletIds: readonly string[],
   ): Promise<ReadonlyMap<string, number>>;
@@ -41,6 +48,7 @@ export interface WalletEventHubSettings {
   pageSize: number;
   retryMs: number;
   sweepIntervalMs: number;
+  sweepBatchSize: number;
   heartbeatIntervalMs: number;
 }
 
@@ -57,6 +65,12 @@ interface Channel {
   readonly subscribers: Set<Subscriber>;
   running: boolean;
   again: boolean;
+}
+
+interface DueChannel {
+  walletId: string;
+  ready: Subscriber[];
+  from: number;
 }
 
 const MAX_TIMER_MS = 2_147_483_647;
@@ -169,15 +183,33 @@ export class WalletEventHub
       const versions = await this.feed.getWalletVersions([
         ...this.channels.keys(),
       ]);
+      const due: DueChannel[] = [];
       for (const [walletId, channel] of this.channels) {
-        const version = versions.get(walletId) ?? 0;
-        if (
-          [...channel.subscribers].some(
-            (subscriber) => !subscriber.paused && subscriber.cursor < version,
-          )
-        ) {
-          this.wake(walletId);
+        const ready = [...channel.subscribers].filter(
+          (subscriber) => !subscriber.paused,
+        );
+        if (ready.length === 0) {
+          continue;
         }
+        const from = Math.min(...ready.map((subscriber) => subscriber.cursor));
+        if (from >= (versions.get(walletId) ?? 0)) {
+          continue;
+        }
+        if (channel.running) {
+          channel.again = true;
+          continue;
+        }
+        due.push({ walletId, ready, from });
+      }
+      if (due.length === 0) {
+        return;
+      }
+      const entries = await this.feed.getLedgerAfterMany(
+        due.map(({ walletId, from }) => ({ walletId, afterVersion: from })),
+        this.settings.sweepBatchSize,
+      );
+      for (const { walletId, ready } of due) {
+        this.dispatch(walletId, ready, entries.get(walletId) ?? []);
       }
     } catch (error) {
       this.logger.warn('wallet event sweep failed', {
@@ -242,32 +274,40 @@ export class WalletEventHub
         from,
         this.settings.pageSize,
       );
-      for (const entry of entries) {
-        for (const subscriber of ready) {
-          if (
-            subscriber.paused ||
-            subscriber.closed ||
-            entry.walletVersion <= subscriber.cursor
-          ) {
-            continue;
-          }
-          subscriber.cursor = entry.walletVersion;
-          this.send(
-            subscriber,
-            serverSentEvent(entry.walletVersion, 'ledger-entry', {
-              walletId,
-              ...entry,
-            }),
-          );
-          this.metrics.increment('wallet_events_streamed_total');
-          this.metrics.observe(
-            'wallet_event_delivery_seconds',
-            Math.max(0, Date.now() - entry.createdAt.getTime()) / 1000,
-          );
-        }
-      }
+      this.dispatch(walletId, ready, entries);
       if (entries.length < this.settings.pageSize) {
         return;
+      }
+    }
+  }
+
+  private dispatch(
+    walletId: string,
+    ready: readonly Subscriber[],
+    entries: readonly LedgerEntryView[],
+  ): void {
+    for (const entry of entries) {
+      for (const subscriber of ready) {
+        if (
+          subscriber.paused ||
+          subscriber.closed ||
+          entry.walletVersion <= subscriber.cursor
+        ) {
+          continue;
+        }
+        subscriber.cursor = entry.walletVersion;
+        this.send(
+          subscriber,
+          serverSentEvent(entry.walletVersion, 'ledger-entry', {
+            walletId,
+            ...entry,
+          }),
+        );
+        this.metrics.increment('wallet_events_streamed_total');
+        this.metrics.observe(
+          'wallet_event_delivery_seconds',
+          Math.max(0, Date.now() - entry.createdAt.getTime()) / 1000,
+        );
       }
     }
   }

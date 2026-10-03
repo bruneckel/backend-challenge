@@ -1,5 +1,6 @@
 import type { EntityManager } from '@mikro-orm/postgresql';
 import type {
+  LedgerCursor,
   LedgerPageRequest,
   LedgerRepository,
   ReconciliationSnapshot,
@@ -65,6 +66,30 @@ export class MikroOrmLedgerRepository implements LedgerRepository {
       { walletId, walletVersion: { $gt: afterVersion } },
       {
         orderBy: { walletVersion: 'asc' },
+        limit,
+        disableIdentityMap: true,
+      },
+    );
+    return rows.map(toLedgerEntry);
+  }
+
+  async afterMany(
+    cursors: readonly LedgerCursor[],
+    limit: number,
+  ): Promise<WalletLedgerEntry[]> {
+    if (cursors.length === 0) {
+      return [];
+    }
+    const rows = await this.em.find(
+      LedgerEntryRecord,
+      {
+        $or: cursors.map(({ walletId, afterVersion }) => ({
+          walletId,
+          walletVersion: { $gt: afterVersion },
+        })),
+      },
+      {
+        orderBy: { walletId: 'asc', walletVersion: 'asc' },
         limit,
         disableIdentityMap: true,
       },

@@ -29,6 +29,7 @@ import { WalletsController } from './wallets.controller';
             pageSize: 100,
             retryMs: 3000,
             sweepIntervalMs: config.streams.sweepIntervalMs,
+            sweepBatchSize: 1000,
             heartbeatIntervalMs: config.streams.heartbeatIntervalMs,
           },
           metrics,
