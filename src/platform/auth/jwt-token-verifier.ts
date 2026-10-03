@@ -57,8 +57,8 @@ export class JwtTokenVerifier implements TokenVerifier {
 }
 
 function principalOf(payload: JWTPayload): Principal {
-  const { sub, provider_id: providerId, roles = [] } = payload;
-  if (typeof sub !== 'string' || sub === '') {
+  const { sub, exp, provider_id: providerId, roles = [] } = payload;
+  if (typeof sub !== 'string' || sub === '' || typeof exp !== 'number') {
     throw new InvalidTokenError();
   }
   if (
@@ -70,5 +70,10 @@ function principalOf(payload: JWTPayload): Principal {
   if (!Array.isArray(roles) || roles.some((role) => typeof role !== 'string')) {
     throw new InvalidTokenError();
   }
-  return { subject: sub, providerId, roles: roles as string[] };
+  return {
+    subject: sub,
+    providerId,
+    roles: roles as string[],
+    expiresAt: new Date(exp * 1000),
+  };
 }

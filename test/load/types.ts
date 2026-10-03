@@ -95,6 +95,17 @@ export interface ConsistencyResult {
   eventsQueued: number;
 }
 
+export interface StreamResult {
+  subscribers: number;
+  replicas: number;
+  entries: number;
+  latency: LatencySummary;
+  gaps: number;
+  repeats: number;
+  behind: number;
+  closedEarly: number;
+}
+
 export interface ScenarioResult {
   config: ScenarioConfig;
   measuredSeconds: number;
@@ -103,6 +114,7 @@ export interface ScenarioResult {
   steps?: StepResult[];
   outage?: OutageResult;
   publish?: PublishResult;
+  streams?: StreamResult;
   server: ServerResult;
   consistency: ConsistencyResult;
   generator: { cpuPercent: number };

@@ -19,7 +19,7 @@ O relatório (`report.md`), os dados brutos (`results.json`) e os logs de cada p
 |---|---|---|
 | `--preset` | — | `smoke` ou `baseline`; as demais opções sobrescrevem todos os cenários do preset |
 | `--only` | — | roda só os cenários listados (separados por vírgula) |
-| `--profile` | `sustained` | `sustained`, `spike`, `saturation`, `backlog` ou `recovery` |
+| `--profile` | `sustained` | `sustained`, `spike`, `saturation`, `backlog`, `publish` ou `recovery` |
 | `--channel` | `http` | `http`, `sqs` ou `mixed` |
 | `--api`, `--workers` | 1, 1 | processos `api` e `worker` |
 | `--wallets` | 200 | wallets independentes (mais 1 wallet quente) |
@@ -34,6 +34,7 @@ O relatório (`report.md`), os dados brutos (`results.json`) e os logs de cada p
 | `--timeout-ms`, `--max-in-flight` | 10000, 2000 | timeout por requisição e limite de requisições em voo |
 | `--max-error-rate`, `--max-p99-ms` | 0.05, 5000 | interrompe a saturação quando um degrau passa desses limites |
 | `--log-level`, `--pool` | `info`, 10 | nível de log e pool de conexões dos processos |
+| `--subscribers` | 0 | streams SSE abertos durante o cenário, um por wallet (a quente primeiro), distribuídos entre as réplicas da api |
 | `--keep-infra`, `--keep-data` | — | mantém a infraestrutura e os bancos/filas para inspeção |
 
 ## Isolamento
@@ -66,6 +67,7 @@ O relatório (`report.md`), os dados brutos (`results.json`) e os logs de cada p
   - quantis de espera pelo lock da wallet, de processamento por canal e de atraso de publicação da outbox (interpolados nos buckets, como o `histogram_quantile`).
 - **Amostras a cada segundo:** maior idade pendente e maior fila da outbox (gauges do worker) e o máximo de conexões ao banco do cenário (`pg_stat_activity`).
 - **Consistência, depois da drenagem:** o verificador dos testes (`inconsistentWallets`) roda sobre **todas** as wallets do banco, e o cenário confere ainda DLQ vazia, outbox publicada e nenhuma referência pendente.
+- **Streams** (com `--subscribers`): latência de entrega de cada lançamento (do `createdAt` gravado na transação até a chegada ao cliente), lacunas e repetições de `walletVersion` em cada stream e, depois da drenagem, quantas versões ainda faltavam chegar. Qualquer lacuna, repetição ou atraso no fim marca o cenário como "stream com falhas".
 - **Gerador:** CPU consumida pelo processo do harness. Perto de 100% de um núcleo, o próprio gerador é o gargalo e a medida deixa de valer.
 
 ## Método
@@ -118,6 +120,34 @@ A/B no cenário `http-saturation-1x1` (1 api, 1 worker, degraus de 16, 32 e 64 c
 - **Latência fora da saturação:** inalterada; 40 µs somem diante dos milissegundos de uma transação. O p99 maior com 32 clientes vem de uma única rodada (48 ms; as outras duas ficaram em 33 ms).
 - **Sem erro e sem violação** em nenhuma das seis execuções; o gerador ficou em 19% de um núcleo nos dois lados, porque cada provedor reaproveita o mesmo token.
 - **Decisão:** custo aceito. Um cache dos tokens já verificados (pelo texto do token, até o `exp`) eliminaria quase todo ele, mas é mais um cache para proteger; fica para quando a CPU da api for o gargalo em produção, depois do primeiro recurso, que é escalar a api horizontalmente.
+
+### Aviso de commit por `LISTEN/NOTIFY` (PoC da Etapa 3)
+
+O plano recomendava o NOTIFY do PostgreSQL como aviso, depois do commit, de que uma wallet mudou. A PoC foi uma trigger `AFTER INSERT` no ledger chamando `pg_notify` (sem ninguém escutando, para isolar o custo da escrita), medida contra o mesmo commit sem ela: `http-saturation-1x1` e `http-saturation-3x3`, degraus de 16, 32 e 64 clientes, três rodadas alternadas.
+
+| Cenário | Pico sem NOTIFY | Pico com NOTIFY | Diferença | p99 com 64 clientes (ms) |
+|---|---|---|---|---|
+| 1x1 (~1.350 transações/s) | 1.374 a 1.422 | 1.311 a 1.392 | −3,6% (faixas se sobrepõem) | 58,4 → 59,0 |
+| 3x3 (~1.700 transações/s) | 1.713 a 1.772 | 1.482 a 1.533 | **−12,7%** (sem sobreposição) | 74,1 → 90,6 |
+
+- Nas médias da 3x3, a perda é de 1,6% com 16 clientes, 10,6% com 32 e 13,4% com 64: cresce com os commits concorrentes.
+- **Causa:** o PostgreSQL serializa, num lock do banco inteiro, o commit das transações que fizeram NOTIFY, para manter a ordem das notificações.
+- **Decisão:** não adotado. O stream de tempo real usa uma varredura por réplica (ver "Streams" abaixo), que não toca o caminho de escrita. As 12 execuções terminaram sem violação.
+
+### Streams de tempo real (Etapa 3)
+
+`stream-sustained-3x3` repete o `mixed-sustained-3x3` (3 apis, 3 workers, 300 operações/s, metade por HTTP e metade pela fila, 20% na wallet quente, 5% de replays, 60 s) com 100 streams abertos, um por wallet, distribuídos entre as 3 réplicas. Médias de duas rodadas pareadas, em ms:
+
+| Versão | HTTP p50 | HTTP p95 | HTTP p99 | Processamento HTTP p50 |
+|---|---|---|---|---|
+| sem streams | 5,3 | 7,7 | 10,2 | 3,4 |
+| 100 streams, uma leitura do ledger por wallet que mudou | 5,7 | 8,3 | 11,3 | 4,2 |
+| 100 streams, uma leitura por varredura (adotada) | 5,6 | 7,8 | 10,0 | 3,8 |
+
+- **Primeira versão:** cada varredura relia o ledger de cada wallet assistida que mudou, numa transação própria. Com 100 wallets ativas, isso somava centenas de leituras por segundo disputando o banco e o pool, e o p99 HTTP subia cerca de 1 ms.
+- **Versão adotada:** uma única consulta por varredura cobre todas as wallets que mudaram (até 1.000 lançamentos; o resto fica para a varredura seguinte). O p95 e o p99 voltam aos de sem streams, e sobram cerca de 0,3 ms no p50.
+- **Entrega:** nas quatro execuções com streams, entre 10.985 e 11.135 lançamentos chegaram aos clientes sem lacuna, sem repetição e sem atraso no fim. O p50 ficou em 255 ms, o p99 em 500 ms e o máximo em 518 ms, limitados pelo intervalo da varredura (500 ms).
+- **Smoke:** o preset `smoke` abre 20 streams no cenário misto, em 2 réplicas.
 
 ## Baseline
 

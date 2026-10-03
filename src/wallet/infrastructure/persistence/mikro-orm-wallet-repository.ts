@@ -42,6 +42,20 @@ export class MikroOrmWalletRepository implements WalletRepository {
     return row === null ? null : toWallet(row);
   }
 
+  async versionsOf(
+    ids: readonly string[],
+  ): Promise<ReadonlyMap<string, number>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const rows = await this.em.find(
+      WalletRecord,
+      { id: { $in: [...ids] } },
+      { fields: ['id', 'version'], disableIdentityMap: true },
+    );
+    return new Map(rows.map((row) => [row.id, row.version]));
+  }
+
   async insert(wallet: Wallet): Promise<void> {
     try {
       await this.em.insert(WalletRecord, toWalletRow(wallet));

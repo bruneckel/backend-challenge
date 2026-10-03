@@ -3,8 +3,10 @@ import {
   TransactionNotFoundError,
   WalletNotFoundError,
 } from '@wallet/application/errors';
+import type { LedgerCursor } from '@wallet/application/ports/ledger-repository';
 import type { WageringScope } from '@wallet/application/ports/wagering-scope';
 import {
+  type LedgerEntryView,
   type LedgerPage,
   type TransactionView,
   type WalletView,
@@ -54,6 +56,44 @@ export class WalletQueries {
             : null,
       };
     });
+  }
+
+  getLedgerAfter(
+    walletId: string,
+    afterVersion: number,
+    limit: number,
+  ): Promise<LedgerEntryView[]> {
+    return this.deps.unitOfWork.run(async ({ ledger }) =>
+      (await ledger.after(walletId, afterVersion, limit)).map(
+        toLedgerEntryView,
+      ),
+    );
+  }
+
+  async getLedgerAfterMany(
+    cursors: readonly LedgerCursor[],
+    limit: number,
+  ): Promise<ReadonlyMap<string, LedgerEntryView[]>> {
+    if (cursors.length === 0) {
+      return new Map();
+    }
+    return this.deps.unitOfWork.run(async ({ ledger }) => {
+      const grouped = new Map<string, LedgerEntryView[]>();
+      for (const entry of await ledger.afterMany(cursors, limit)) {
+        const items = grouped.get(entry.walletId) ?? [];
+        items.push(toLedgerEntryView(entry));
+        grouped.set(entry.walletId, items);
+      }
+      return grouped;
+    });
+  }
+
+  getWalletVersions(
+    walletIds: readonly string[],
+  ): Promise<ReadonlyMap<string, number>> {
+    return this.deps.unitOfWork.run(({ wallets }) =>
+      wallets.versionsOf(walletIds),
+    );
   }
 
   getTransaction(transactionId: string): Promise<TransactionView> {

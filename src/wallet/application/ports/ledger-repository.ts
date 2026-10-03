@@ -6,6 +6,11 @@ export interface LedgerPageRequest {
   limit: number;
 }
 
+export interface LedgerCursor {
+  walletId: string;
+  afterVersion: number;
+}
+
 export interface ReconciliationSnapshot {
   storedBalance: Money;
   credits: Money;
@@ -18,6 +23,15 @@ export interface LedgerRepository {
   page(
     walletId: string,
     request: LedgerPageRequest,
+  ): Promise<WalletLedgerEntry[]>;
+  after(
+    walletId: string,
+    afterVersion: number,
+    limit: number,
+  ): Promise<WalletLedgerEntry[]>;
+  afterMany(
+    cursors: readonly LedgerCursor[],
+    limit: number,
   ): Promise<WalletLedgerEntry[]>;
   reconciliationSnapshot(
     walletId: string,

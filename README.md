@@ -96,6 +96,7 @@ Resposta: `200 {"transactionId":"…","status":"PROCESSED","balance":{"amount":"
 | `GET /wallets/:walletId` | saldo e versão | operador |
 | `GET /wallets/:walletId/ledger?limit=50&cursor=…` | lançamentos, do mais novo para o mais antigo | operador |
 | `POST /wallets/:walletId/reconciliation` | compara o saldo com o ledger, sem alterar nada | operador |
+| `GET /wallets/:walletId/events` | saldo e lançamentos em tempo real (Server-Sent Events) | operador |
 | `POST /wagering/transactions` | BET, WIN, LOSS, REFUND, ROLLBACK | o provedor do `providerId` do corpo |
 | `GET /wagering/transactions/:transactionId` | uma transação | o provedor dela ou o operador |
 | `GET /providers/:providerId/wagering/transactions/:externalTransactionId` | uma transação pelo id do provedor | esse provedor ou o operador |
@@ -103,6 +104,28 @@ Resposta: `200 {"transactionId":"…","status":"PROCESSED","balance":{"amount":"
 | `GET /health/live` · `GET /health/ready` | saúde (api e worker) | qualquer um, sem token |
 
 Status: 200 processada, 202 aguardando referência, 422 rejeitada (com `failureCode`), 400/404/409 para requisições inválidas ou conflitantes (corpo `application/problem+json`; abrir de novo uma wallet que já existe devolve 409 com o `walletId` dela), 401 sem token ou com token inválido, 403 quando o token não dá acesso à rota ou ao `providerId`, 503 para indisponibilidade (pode reenviar com a mesma key). Detalhes em [ARCHITECTURE.md](ARCHITECTURE.md#api-http) e em [Autenticação e autorização](ARCHITECTURE.md#autenticação-e-autorização).
+
+## Acompanhar uma wallet em tempo real
+
+```bash
+curl -N localhost:3000/wallets/$WALLET/events -H "authorization: Bearer $OPERATOR"
+```
+
+O stream começa com o estado atual da wallet e depois manda um evento por lançamento, venha a operação pela API, pela fila ou pelo scheduler, de qualquer réplica:
+
+```
+retry: 3000
+
+id: 1
+event: wallet
+data: {"id":"…","playerId":"…","balance":{"amount":"100.00","currency":"BRL"},"version":1,…}
+
+id: 2
+event: ledger-entry
+data: {"walletId":"…","id":"…","transactionId":"…","direction":"DEBIT","money":{"amount":"25.00","currency":"BRL"},"balanceBefore":{"amount":"100.00","currency":"BRL"},"balanceAfter":{"amount":"75.00","currency":"BRL"},"walletVersion":2,"createdAt":"…"}
+```
+
+O `id` de cada evento é a versão da wallet. Para retomar sem perder nada, reconecte com `-H 'Last-Event-ID: <último id recebido>'`: a API reenvia os lançamentos seguintes a partir do ledger, sem lacuna nem repetição. O stream termina quando o token vence (5 minutos) e no desligamento da réplica; basta reconectar com um token novo e o `Last-Event-ID`. No navegador, o `EventSource` não envia o header `Authorization`, então o painel lê o stream com `fetch` e `ReadableStream`.
 
 ## Mandar uma operação pela fila
 
@@ -187,6 +210,9 @@ Todas são validadas no boot; um valor inválido derruba o processo com uma mens
 | `AUTH_JWKS_URL` | `<AUTH_ISSUER>/protocol/openid-connect/certs` | chaves públicas do IdP; no Compose, `http://keycloak:8080/...` |
 | `AUTH_JWKS_TIMEOUT_MS` | `5000` | timeout da busca das chaves |
 | `AUTH_CLOCK_SKEW_SECONDS` | `5` | tolerância de relógio para `exp` e `nbf` (máximo 300) |
+| `STREAM_SWEEP_INTERVAL_MS` | `500` | intervalo em que cada réplica confere as wallets assinadas (latência máxima de entrega) |
+| `STREAM_HEARTBEAT_INTERVAL_MS` | `15000` | comentário `keep-alive` nos streams parados |
+| `STREAM_MAX_STREAMS` | `1000` | streams abertos por réplica; acima disso, 503 `STREAM_CAPACITY_EXCEEDED` |
 
 ## Problemas comuns
 

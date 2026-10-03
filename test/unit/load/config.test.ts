@@ -81,6 +81,14 @@ describe('parseLoadArgs', () => {
       'drainTimeoutSeconds must be a positive integer',
     ],
     [['--only', 'nothing'], 'No scenario matches --only nothing'],
+    [
+      ['--wallets', '10', '--subscribers', '12'],
+      'subscribers must be between 0 and wallets + 1',
+    ],
+    [
+      ['--profile', 'backlog', '--channel', 'sqs', '--subscribers', '1'],
+      'backlog does not open streams',
+    ],
   ])('refuses %j', (argv, message) => {
     expect(() => parseLoadArgs(argv)).toThrow(message);
   });

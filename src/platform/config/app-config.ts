@@ -64,6 +64,11 @@ export interface AppConfig {
     jwksTimeoutMs: number;
     clockSkewSeconds: number;
   };
+  streams: {
+    maxStreams: number;
+    sweepIntervalMs: number;
+    heartbeatIntervalMs: number;
+  };
 }
 
 export class InvalidConfigurationError extends Error {
@@ -170,6 +175,9 @@ const environmentSchema = z
     AUTH_JWKS_URL: httpUrl.optional(),
     AUTH_JWKS_TIMEOUT_MS: integer(5000, 1),
     AUTH_CLOCK_SKEW_SECONDS: integer(5, 0, 300),
+    STREAM_MAX_STREAMS: integer(1000, 1),
+    STREAM_SWEEP_INTERVAL_MS: integer(500, 10),
+    STREAM_HEARTBEAT_INTERVAL_MS: integer(15_000, 1000),
   })
   .refine(
     (env) => env.REFERENCE_BACKOFF_MAX_MS >= env.REFERENCE_BACKOFF_BASE_MS,
@@ -284,6 +292,11 @@ export function loadConfig(
         `${values.AUTH_ISSUER.replace(/\/+$/, '')}/protocol/openid-connect/certs`,
       jwksTimeoutMs: values.AUTH_JWKS_TIMEOUT_MS,
       clockSkewSeconds: values.AUTH_CLOCK_SKEW_SECONDS,
+    },
+    streams: {
+      maxStreams: values.STREAM_MAX_STREAMS,
+      sweepIntervalMs: values.STREAM_SWEEP_INTERVAL_MS,
+      heartbeatIntervalMs: values.STREAM_HEARTBEAT_INTERVAL_MS,
     },
   };
 }

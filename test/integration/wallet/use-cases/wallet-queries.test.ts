@@ -88,6 +88,65 @@ describe('WalletQueries', () => {
     });
   });
 
+  test('reads the ledger after a version, oldest first', async () => {
+    const wallet = await openWalletWith(wagering, '100.00');
+    const bet = await wagering.submit.execute(commandFor(wallet, Bet, '10.00'));
+    await wagering.submit.execute(commandFor(wallet, Win, '5.00'));
+    await wagering.submit.execute(commandFor(wallet, Bet, '1.00'));
+
+    const first = await wagering.queries.getLedgerAfter(wallet.id, 1, 2);
+    const rest = await wagering.queries.getLedgerAfter(wallet.id, 3, 10);
+
+    expect(first.map((item) => item.walletVersion)).toEqual([2, 3]);
+    expect(rest.map((item) => item.walletVersion)).toEqual([4]);
+    expect(first[0]?.transactionId).toBe(bet.transactionId);
+    expect(first[0]?.balanceAfter).toEqual({
+      amount: '90.00',
+      currency: 'BRL',
+    });
+  });
+
+  test('reads the ledger after several cursors at once, grouped by wallet', async () => {
+    const quiet = await openWalletWith(wagering, '100.00');
+    const busy = await openWalletWith(wagering, '100.00');
+    await wagering.submit.execute(commandFor(quiet, Bet, '1.00'));
+    await wagering.submit.execute(commandFor(busy, Bet, '2.00'));
+    await wagering.submit.execute(commandFor(busy, Win, '3.00'));
+
+    const grouped = await wagering.queries.getLedgerAfterMany(
+      [
+        { walletId: quiet.id, afterVersion: 1 },
+        { walletId: busy.id, afterVersion: 1 },
+      ],
+      10,
+    );
+
+    expect(grouped.get(quiet.id)?.map((item) => item.walletVersion)).toEqual([
+      2,
+    ]);
+    expect(grouped.get(busy.id)?.map((item) => item.walletVersion)).toEqual([
+      2, 3,
+    ]);
+    expect((await wagering.queries.getLedgerAfterMany([], 10)).size).toBe(0);
+  });
+
+  test('reads the current version of the given wallets', async () => {
+    const quiet = await openWalletWith(wagering, '100.00');
+    const busy = await openWalletWith(wagering, '100.00');
+    await wagering.submit.execute(commandFor(busy, Bet, '10.00'));
+
+    const versions = await wagering.queries.getWalletVersions([
+      quiet.id,
+      busy.id,
+      Bun.randomUUIDv7(),
+    ]);
+
+    expect(Object.fromEntries(versions)).toEqual({
+      [quiet.id]: 1,
+      [busy.id]: 2,
+    });
+  });
+
   test('reports the ledger of an unknown wallet as not found', async () => {
     expect(
       await rejectionOf(
