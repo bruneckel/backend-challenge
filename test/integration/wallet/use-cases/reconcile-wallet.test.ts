@@ -151,6 +151,36 @@ describe('ReconcileWallet', () => {
     expect(stored.balance).toBe('101.50');
   });
 
+  test('refuses new operations on a wallet whose stored balance drifted from its ledger', async () => {
+    const wallet = await openWalletWith(wagering, '100.00');
+    corruptedOnPurpose.push(wallet.id);
+    await bypassingLedgerGuards(
+      harness.database.sql,
+      (tx) =>
+        tx`update wallets set balance_amount = '101.50' where id = ${wallet.id}`,
+    );
+
+    const failure = await rejectionOf(
+      wagering.submit.execute(commandFor(wallet, Bet, '10.00')),
+    );
+
+    expect(failure).toMatchObject({
+      code: '23514',
+      constraint: 'wallet_ledger_entries_follow_chain',
+    });
+    const [state] = await harness.database.sql`
+      select balance_amount::text as balance, version,
+        (select count(*)::int from wallet_ledger_entries where wallet_id = ${wallet.id}) as entries,
+        (select count(*)::int from wager_transactions where wallet_id = ${wallet.id} and kind = 'BET') as bets
+      from wallets where id = ${wallet.id}`;
+    expect(state).toEqual({
+      balance: '101.50',
+      version: 1,
+      entries: 1,
+      bets: 0,
+    });
+  });
+
   test('reports a negative calculated balance when the ledger is corrupted', async () => {
     const wallet = await openWalletWith(wagering, '50.00');
     corruptedOnPurpose.push(wallet.id);
