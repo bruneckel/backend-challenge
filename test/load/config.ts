@@ -172,6 +172,7 @@ export const PRESETS: Record<string, PresetScenario[]> = {
       wallets: 200_000,
       rate: 600,
       durationSeconds: 120,
+      drainTimeoutSeconds: 60,
     },
     {
       name: 'retention-off-1x1',
@@ -180,6 +181,7 @@ export const PRESETS: Record<string, PresetScenario[]> = {
       wallets: 200_000,
       rate: 600,
       durationSeconds: 120,
+      drainTimeoutSeconds: 60,
       appEnv: { RETENTION_ENABLED: 'false' },
     },
   ],
