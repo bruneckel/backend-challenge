@@ -25,7 +25,7 @@ interface ReconciliationRow {
   chain_breaks: number;
 }
 
-const RECONCILIATION_SQL = `
+export const RECONCILIATION_SQL = `
   with chain as (
     select wallet_version, direction, amount, balance_before,
       lag(balance_after) over (order by wallet_version) as previous_after,
