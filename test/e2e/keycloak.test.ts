@@ -1,5 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
 import { type ApiHarness, startApi } from '@test/support/api';
+import { inconsistentWallets } from '@test/support/invariants';
 
 const ISSUER = 'http://localhost:8080/realms/wagering';
 
@@ -41,6 +49,10 @@ beforeAll(async () => {
     AUTH_AUDIENCE: 'wagering-api',
     AUTH_JWKS_URL: `${ISSUER}/protocol/openid-connect/certs`,
   });
+});
+
+afterEach(async () => {
+  expect(await inconsistentWallets(api.database.sql)).toEqual([]);
 });
 
 afterAll(async () => {
