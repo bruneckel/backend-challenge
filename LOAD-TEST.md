@@ -351,6 +351,8 @@ Leitura:
 - **Pico:** o triplo da taxa por 15 s passa sem erro, com p99 de 56 ms.
 - **Queda do PostgreSQL:** 10 s pausado geram 15 timeouts HTTP (requisições que esperaram mais de 10 s). O primeiro sucesso vem 14 ms depois da volta, e a vazão normal em 1,7 s. As mensagens SQS só atrasam.
 
+**Referência com o PostgreSQL dimensionado (Etapa 4).** O `http-saturation-1x1` rodou de novo no commit `2fad641`, já com autenticação e com os triggers saldo ⇔ ledger, depois da mudança de ambiente descrita em "Isolamento". O degrau de maior vazão (16 clientes) fez 1.338 req/s, com p50/p95/p99 de 11,9/15,4/19,2 ms. A linha da tabela, sem autenticação e com os padrões da imagem, fez 1.440 req/s com p99 de 19,3 ms. A diferença fica dentro do custo medido da autenticação (3% a 5%) somado ao dos triggers (1% a 2%). Na base pequena, a mudança de ambiente não pesa: ela importa nas bases grandes (ver "Escala: 1 milhão de wallets").
+
 ## Limitações
 
 - Gerador, aplicação e infraestrutura dividem a mesma máquina. No macOS, PostgreSQL e MiniStack rodam na VM do Docker, e a aplicação roda nativa.

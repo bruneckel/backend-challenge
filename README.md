@@ -208,7 +208,7 @@ Os testes precisam do PostgreSQL e do MiniStack de pé (`bun run infra:up`). Cad
 
 | Comando | O que roda |
 |---|---|
-| `bun run test` | toda a suíte: unidade, integração e concorrência (cerca de 2 minutos) |
+| `bun run test` | toda a suíte: unidade, integração e concorrência (cerca de 3 minutos) |
 | `bun run test:unit` | domínio, políticas e utilitários, sem infraestrutura |
 | `bun run test:integration` | banco, filas, HTTP e casos de uso contra PostgreSQL e MiniStack reais |
 | `bun run test:concurrency` | cenários concorrentes em processo e com vários processos `api` e `worker` (C1 a C9, matriz de shutdown, reinício) |
