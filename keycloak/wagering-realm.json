@@ -53,7 +53,8 @@
             "introspection.token.claim": "true"
           }
         }
-      ]
+      ],
+      "fullScopeAllowed": false
     },
     {
       "clientId": "provider-b",
@@ -93,7 +94,8 @@
             "introspection.token.claim": "true"
           }
         }
-      ]
+      ],
+      "fullScopeAllowed": false
     },
     {
       "clientId": "wagering-operator",
@@ -133,7 +135,8 @@
             "introspection.token.claim": "true"
           }
         }
-      ]
+      ],
+      "fullScopeAllowed": false
     },
     {
       "clientId": "wagering-metrics",
@@ -173,7 +176,8 @@
             "introspection.token.claim": "true"
           }
         }
-      ]
+      ],
+      "fullScopeAllowed": false
     }
   ],
   "users": [
@@ -200,6 +204,16 @@
       "enabled": true,
       "serviceAccountClientId": "wagering-metrics",
       "realmRoles": ["metrics-reader"]
+    }
+  ],
+  "scopeMappings": [
+    {
+      "client": "wagering-operator",
+      "roles": ["operator"]
+    },
+    {
+      "client": "wagering-metrics",
+      "roles": ["metrics-reader"]
     }
   ]
 }
