@@ -11,6 +11,7 @@ flowchart LR
   provider([Provedor]) -- "client_credentials" --> keycloak[Keycloak]
   provider -- "POST /wagering/transactions + Bearer" --> api
   api -. "JWKS (cache)" .-> keycloak
+  operator([Operador]) -- "GET /wallets/:id/events (SSE)" --> api
   provider -- SendMessage --> commands[(wager-transactions.fifo)]
   commands -- "consumer (long poll)" --> worker
   worker -- "DLQ manual" --> dlq[(wager-transactions-dlq.fifo)]
@@ -256,6 +257,7 @@ Nada disso cobre indisponibilidade (503, nada gravado) nem conflitos de chave (4
 | `GET /wagering/transactions/:id` e `GET /providers/:providerId/wagering/transactions/:externalTransactionId` | 200 | 400, 404 `TRANSACTION_NOT_FOUND`, 503 |
 | `POST /wagering/transactions` | 200 PROCESSED · 202 PENDING_REFERENCE (com `Location`) · 422 REJECTED · 500 FAILED, sempre com o `TransactionResult` | 400, 404, 409, 503 |
 | `POST /wallets/:walletId/reconciliation` | 200, inclusive com `consistent: false` | 400, 404, 503 |
+| `GET /wallets/:walletId/events` | 200 `text/event-stream` (ver [Tempo real](#tempo-real-sse)) | 400 (`Last-Event-ID` inválido ou à frente da wallet), 404, 503 `STREAM_CAPACITY_EXCEEDED` |
 | `GET /metrics` | 200 | 401, 403 sem o papel `metrics-reader` |
 | `GET /health/live` · `GET /health/ready` | 200, sem token | `ready`: 503 com o banco ou o SQS fora, e durante o shutdown |
 
@@ -270,7 +272,7 @@ Toda rota, menos as de health, responde 401 sem token válido e 403 quando o tok
 | `ACCESS_DENIED` | 403 | não |
 | `WALLET_NOT_FOUND`, `TRANSACTION_NOT_FOUND`, `NOT_FOUND` | 404 | não |
 | `WALLET_ALREADY_EXISTS`, `IDEMPOTENCY_KEY_CONFLICT`, `EXTERNAL_TRANSACTION_CONFLICT` | 409 | não |
-| `SERVICE_UNAVAILABLE` (com `Retry-After: 1`) | 503 | sim |
+| `SERVICE_UNAVAILABLE` (com `Retry-After: 1`), `STREAM_CAPACITY_EXCEEDED` (com `Retry-After: 5`) | 503 | sim |
 | `INTERNAL_ERROR` | 500 | sim (nada foi confirmado; reenviar com a mesma key é seguro) |
 
 Um único filtro global aplica essa tabela em todos os endpoints. Erros de validação listam o caminho e a mensagem de cada campo, nunca o valor recebido. O 409 `WALLET_ALREADY_EXISTS` traz o membro de extensão `walletId`, com o id da wallet que já existe para aquele player e moeda, para o cliente repetir a criação com segurança.
@@ -358,7 +360,8 @@ Um REFUND, ROLLBACK (ou WIN/LOSS com referência) cuja referência ainda não ex
 | `pending_reference_transactions` · `outbox_pending_events` · `outbox_oldest_pending_age_seconds` · `sqs_dlq_approximate_messages` | gauge, amostrado pelo worker a cada 5 s | — |
 | `wallet_lock_wait_seconds` · `outbox_publish_delay_seconds` | histograma | — |
 | `wager_processing_duration_seconds` | histograma | `channel`, `kind`, `outcome` |
-| `http_request_duration_seconds` | histograma | `method`, `route`, `status` |
+| `http_request_duration_seconds` | histograma | `method`, `route`, `status` (os streams SSE ficam de fora: duram minutos e distorceriam a latência das requisições) |
+| `wallet_event_streams` · `wallet_events_streamed_total` · `wallet_event_delivery_seconds` | gauge · contador · histograma | — (streams abertos na réplica, lançamentos entregues e tempo do lançamento até o stream) |
 
 Famílias exigidas pelo enunciado: transações por status (`wager_transactions_total`), duplicatas detectadas (`idempotency_replays_total`, `inbox_duplicates_total`), retries (`sqs_message_retries_total`, `db_transaction_retries_total`, `outbox_publish_retries_total`, `pending_reference_retries_total`), mensagens em DLQ (`sqs_messages_dead_lettered_total`, `sqs_dlq_approximate_messages`), conflitos de lock (`wallet_lock_timeouts_total`, `wallet_lock_wait_seconds`, `db_deadlocks_total`, `wallet_version_conflicts_total`), outbox lag (`outbox_oldest_pending_age_seconds`, `outbox_pending_events`, `outbox_publish_delay_seconds`) e latência de processamento (`wager_processing_duration_seconds`, `http_request_duration_seconds`).
 
@@ -376,7 +379,7 @@ Famílias exigidas pelo enunciado: transações por status (`wager_transactions_
 
 1. readiness passa a responder 503 (`shutting_down`);
 2. o consumidor aborta o long poll, termina as mensagens em andamento (o heartbeat continua só para elas) e devolve as não iniciadas com visibility 0; o publisher termina o lote atual (envio e commit); o scheduler termina a candidata atual;
-3. o servidor HTTP para de aceitar conexões e termina as requisições em andamento;
+3. os streams SSE são encerrados (o cliente reconecta em outra réplica com `Last-Event-ID`), e o servidor HTTP para de aceitar conexões e termina as requisições em andamento;
 4. os clientes SQS são destruídos e o pool do PostgreSQL é fechado, o que também espera transações ativas;
 5. `shutdown complete` no log; o Nest re-levanta o sinal e o processo sai com 143.
 
@@ -391,7 +394,7 @@ Num SIGKILL nada disso roda, e a correção vem do banco: a transação aberta s
 
 ## Provas por teste
 
-A suíte (`bun run test`, 921 testes, cerca de 2 minutos) roda contra PostgreSQL e MiniStack reais; a da versão avaliada (799 testes) passou 10 vezes seguidas sem falha. Cada suíte de integração e de concorrência usa um banco criado para ela e filas com prefixo único. **Todo teste que opera o sistema** — pelos casos de uso, pela API HTTP, pelo consumidor, pelo scheduler, pelo publisher ou por processos reais — termina com um verificador que confere, para cada wallet do banco: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo. Só ficam de fora as wallets corrompidas de propósito pelos testes de reconciliação, excluídas pelo nome. Os testes de schema e de repositório montam linhas à mão para exercitar uma constraint ou uma primitiva por vez (por exemplo, um `UPDATE` de saldo sem lançamento), então ficam fora por construção.
+A suíte (`bun run test`, 990 testes, cerca de 2 minutos) roda contra PostgreSQL e MiniStack reais; a da versão avaliada (799 testes) passou 10 vezes seguidas sem falha. Cada suíte de integração e de concorrência usa um banco criado para ela e filas com prefixo único. **Todo teste que opera o sistema** — pelos casos de uso, pela API HTTP, pelo consumidor, pelo scheduler, pelo publisher ou por processos reais — termina com um verificador que confere, para cada wallet do banco: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo. Só ficam de fora as wallets corrompidas de propósito pelos testes de reconciliação, excluídas pelo nome. Os testes de schema e de repositório montam linhas à mão para exercitar uma constraint ou uma primitiva por vez (por exemplo, um `UPDATE` de saldo sem lançamento), então ficam fora por construção.
 
 | Id | Cenário | Onde |
 |---|---|---|
@@ -484,6 +487,38 @@ A autenticação roda antes de tudo: antes da validação do corpo, da `Idempote
 
 **Fora desta etapa:** o painel futuro usaria Authorization Code com PKCE e cliente público, com papéis de operação e auditoria separados dos provedores; mTLS entre serviços; escopo da idempotência por provedor (adiado no plano; como a `Idempotency-Key` é global, um provedor consegue saber, pelo 409 `IDEMPOTENCY_KEY_CONFLICT`, que uma key já foi usada por outro, sem ver o resultado nem reaproveitá-lo, porque o corpo dele leva o próprio `providerId`); revogação imediata (o token vale 5 minutos; revogar uma chave é removê-la do JWKS, e o cache a abandona em até 10 minutos).
 
+## Tempo real (SSE)
+
+`GET /wallets/:walletId/events`, com o papel `operator` (como as demais leituras de wallet), entrega o saldo e os lançamentos de uma wallet em tempo real, por Server-Sent Events. É um canal de leitura para o painel: a fonte da verdade continua sendo o banco, e os eventos de integração continuam saindo pela outbox.
+
+**Eventos.** Uma assinatura nova recebe primeiro `wallet`, com o estado atual, e depois um `ledger-entry` por lançamento (com o `walletId`), venha a operação da api, do worker ou do scheduler, de qualquer réplica. O `id` de todo evento é a `walletVersion`. Um comentário `keep-alive` sai a cada 15 s e `retry: 3000` orienta a reconexão.
+
+**Sem lacuna e sem repetição.** A versão da wallet só sobe junto com um lançamento (a cadeia contínua é conferida pelo verificador de invariantes), e o lock da linha faz a versão v+1 ficar visível só depois da v. O stream lê o ledger em ordem, a partir do cursor de cada cliente. Ao reconectar com `Last-Event-ID`, o cliente recebe os lançamentos seguintes, relidos do ledger, que é imutável. Um `Last-Event-ID` inválido ou à frente da wallet responde 400.
+
+**Entrega entre réplicas.** Cada réplica da api guarda as assinaturas dos próprios clientes. A cada `STREAM_SWEEP_INTERVAL_MS` (500 ms), ela faz duas consultas:
+- as versões das wallets assinadas;
+- os lançamentos de todas as que mudaram, depois do cursor de cada uma, numa única leitura sobre o índice único `(wallet_id, wallet_version)`, com até 1.000 lançamentos; o resto fica para a varredura seguinte.
+
+A latência de entrega fica limitada pelo intervalo da varredura, e o custo cresce com o número de wallets assistidas, não com o volume de escrita. Com 3 réplicas, 300 operações/s e 100 streams, a entrega ficou em p50 de 255 ms e p99 de 500 ms. O p95 e o p99 das requisições HTTP ficaram iguais aos da mesma carga sem streams, e o p50 subiu cerca de 0,3 ms ([LOAD-TEST.md](LOAD-TEST.md#streams-de-tempo-real-etapa-3)). Uma primeira versão, com uma leitura por wallet que mudou, subia o p99 HTTP em cerca de 1 ms e foi trocada pela leitura única.
+
+**Por que não `LISTEN/NOTIFY`.** O plano recomendava o NOTIFY do PostgreSQL como campainha depois do commit. Uma PoC (trigger `AFTER INSERT` no ledger chamando `pg_notify`) foi medida no harness de carga contra a mesma versão sem ela, em três rodadas alternadas. Com 1 api, a vazão de pico caiu 3,6%, com faixas sobrepostas. Com 3 apis e 3 workers, caiu **12,7%**, sem sobreposição, e o p99 com 64 clientes subiu de 74 para 91 ms. O PostgreSQL serializa o commit das transações que fizeram NOTIFY num lock do banco inteiro, então o custo cresce com os commits concorrentes e seria pago por toda transação financeira, haja ou não alguém assistindo. A varredura não toca o caminho de escrita. O hub mantém `wake(walletId)`, de modo que uma campainha fora da transação financeira pode ser somada depois sem mudar a entrega, se a latência da varredura não bastar.
+
+**Cliente lento.** Nada se acumula em memória. Quando o socket deixa de aceitar dados, o stream daquele cliente pausa; no `drain`, retoma do próprio cursor, relendo do banco.
+
+**Fim do stream.** O stream termina:
+- quando o token vence, e o cliente reconecta com outro token e o `Last-Event-ID`;
+- quando o cliente desconecta;
+- no SIGTERM, antes de o servidor HTTP fechar, para não segurar o processo.
+
+Cada réplica aceita até `STREAM_MAX_STREAMS` (1000) streams; acima disso responde 503 `STREAM_CAPACITY_EXCEEDED`, com `Retry-After: 5`. No Bun, a resposta HTTP não emite `close` quando o cliente desconecta, mas o socket emite; por isso o stream observa o `close` do socket.
+
+**Navegador.** O `EventSource` não envia o header `Authorization`; o painel lê o stream com `fetch` e `ReadableStream`.
+
+**Testes.**
+- **Hub:** snapshot, replay a partir do `Last-Event-ID`, `Last-Event-ID` à frente, wallet inexistente, capacidade, entrega única e em ordem para vários assinantes, isolamento entre wallets, pausa e retomada no cliente lento, varredura, `keep-alive`, expiração do token, desconexão, desligamento, wake-ups sobrepostos, recuperação depois de leitura com falha e métricas.
+- **HTTP:** cabeçalhos e eventos, replay, continuação ao vivo sem lacuna, 401, 403, 404, 400, expiração do token fora do histograma, gauge de streams, capacidade e desligamento.
+- **Processos reais:** assinante numa api, escritas pela outra api e pela fila em paralelo, com as 40 versões chegando em ordem e sem lacuna; retomada em outra réplica pelo `Last-Event-ID`; SIGTERM saindo com 143 sem esperar os clientes. Sem a varredura, os dois primeiros ficam vermelhos.
+
 ## Interpretações do enunciado
 
 - **Reversões — regra literal do §7.4:** no máximo uma reversão PROCESSED por referência **e por tipo**. Consequência: um REFUND e um ROLLBACK da mesma BET são ambos aceitos e devolvem o valor da aposta duas vezes. Não é tratado como contradição com "não duplicar créditos": esse invariante trata da mesma operação aplicada mais de uma vez, e REFUND e ROLLBACK são operações distintas, cada uma aplicada uma única vez. O efeito econômico está coberto pelo C9.
@@ -511,6 +546,7 @@ A autenticação roda antes de tudo: antes da validação do corpo, da `Idempote
 - **Ordem dos eventos** é a de publicação, não a de commit; o consumidor usa `eventId` e `walletVersion`.
 - **Uma wallet muito disputada** serializa no lock da linha: a vazão por wallet é limitada pela duração da transação (curta, sem I/O externo); `lock_timeout` de 3 s vira 503 ou backoff.
 - **Várias instâncias da api** são demonstradas pelo harness de testes (portas distintas); o Compose não tem load balancer.
+- **Tempo real por varredura:** a entrega pelo stream leva até o intervalo da varredura (500 ms por padrão; configurável). É o preço de não tocar o caminho de escrita, e o desenho do hub aceita um aviso de baixa latência se for preciso.
 - **Disponibilidade amarrada ao Keycloak:** sem ele, nenhum cliente obtém token novo; a api segue validando pelo cache de chaves só enquanto os tokens já emitidos valem.
 - **Bootstrap e mudança de atributos de fila:** `CreateQueue` com atributos diferentes dos existentes é recusado pela AWS; mudar a visibility de uma fila já criada exige `SetQueueAttributes` manual.
 
