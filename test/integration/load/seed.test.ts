@@ -57,6 +57,20 @@ describe('load seed', () => {
         pending: 0,
       });
       expect(await inconsistentWallets(sql)).toEqual([]);
+      const [future] = await sql`
+        select
+          (select count(*)::int from wallets where updated_at > now()) as wallets,
+          (select count(*)::int from wager_transactions where updated_at > now()) as transactions,
+          (select count(*)::int from wallet_ledger_entries where created_at > now()) as entries,
+          (select count(*)::int from inbox_messages where processed_at > now()) as inbox,
+          (select count(*)::int from outbox_messages where published_at > now()) as outbox`;
+      expect(future).toEqual({
+        wallets: 0,
+        transactions: 0,
+        entries: 0,
+        inbox: 0,
+        outbox: 0,
+      });
       const [mismatched] = await sql`
         select count(*)::int as count from outbox_messages
         where abs(extract(epoch from uuid_extract_timestamp(id) - occurred_at)) > 1`;

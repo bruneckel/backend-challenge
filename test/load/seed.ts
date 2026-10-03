@@ -46,7 +46,8 @@ function chunkSql(
   return `
     create temporary table seed_wallets on commit drop as
       select n, uuidv7() as id, uuidv7() as player_id,
-        now() - (n % 30) * interval '1 day' - (n % 86400) * interval '1 second' as created_at
+        now() - (n % 30) * interval '1 day' - (n % 86400) * interval '1 second'
+          - ${versions + 1} * interval '1 minute' as created_at
       from generate_series(${integer(from)}, ${integer(to)}) as n;
 
     insert into wallets (id, player_id, currency, balance_amount, version, created_at, updated_at)
