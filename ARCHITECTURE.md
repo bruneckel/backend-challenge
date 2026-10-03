@@ -58,7 +58,8 @@ O ESLint impõe as fronteiras: domínio e aplicação não importam NestJS, Mikr
 | Emulador SQS | MiniStack 1.5.20 | ver evidências abaixo |
 | Métricas e logs | `prom-client` 15.1.3, `pino` 10.3.1 | catálogo exposto em `/metrics`; logs JSON |
 | JWT e JWKS | `jose` 6.2.12 | verificador testado contra chaves locais e contra o Keycloak |
-| IdP | Keycloak 26.8.0 (`quay.io/keycloak/keycloak:26.8.0`, `start-dev`) | realm importado no boot; `bun run test:e2e` |
+| IdP | Keycloak 26.8.0 (imagem otimizada a partir de `quay.io/keycloak/keycloak:26.8.0`, `start --optimized`, banco no PostgreSQL) | realm importado na primeira subida; `bun run test:e2e` |
+| Painel de métricas | Prometheus 3.15.0, Grafana 13.2.3 (profile `observability`) | coleta autenticada e painel provisionado; `bun run test:e2e` |
 | Lint e formatação | ESLint 10.11.0 com typescript-eslint 8.71.0; Prettier 3.9.9 | `bun run lint` limpo |
 | Orquestração | Docker 29.8.1, Docker Compose v5.5.1 | stack completa com healthchecks e `--scale worker=3` |
 
@@ -127,7 +128,7 @@ O Bun 1.4 reescreveu o runtime, e a versão mais recente é a 1.4.2. O spike rod
 | `tsc --noEmit` e `eslint .` | limpos |
 | Imagem da api construída com `--build-arg BUN_VERSION=1.4.2`, parada com SIGTERM | com `--init`, saída 143; como PID 1, saída 0; hook executado nos dois |
 
-O projeto segue no 1.3.14 enquanto o runtime local estiver nessa versão. O `Dockerfile` recebe a versão por `ARG BUN_VERSION`, então adotar a 1.4.2 é trocar um valor e atualizar o Bun local.
+O projeto segue no 1.3.14 enquanto o runtime local estiver nessa versão. O `Dockerfile` fixa a imagem por versão e digest, então adotar a 1.4.2 é trocar essa linha (tag e digest) e atualizar o Bun local.
 
 ## Schema e garantias no banco
 
@@ -410,7 +411,15 @@ Famílias exigidas pelo enunciado: transações por status (`wager_transactions_
 
 **Bootstrap.** Aplica as migrations pendentes, cria a DLQ (retenção de 14 dias), a fila de entrada (visibility de `SQS_VISIBILITY_TIMEOUT_SECONDS` e redrive para a DLQ com `maxReceiveCount` 10) e a fila de eventos, e registra `bootstrap complete`. Uma segunda execução não aplica nada e não muda nada.
 
-**Compose.** `postgres`, `sqs` e `keycloak` com healthcheck (o do Keycloak, na porta de gerenciamento 9000); `bootstrap` roda uma vez depois deles; `api` (porta 3000) e `worker` (sem porta publicada, escalável com `--scale worker=3`) esperam `service_completed_successfully` do bootstrap. Os três papéis usam a mesma imagem, com o processo iniciado direto pelo Bun (forma exec), usuário sem privilégio, `init: true`, `stop_grace_period: 30s` e healthcheck em `/health/ready`. O `INSTANCE_ID` padrão é `hostname-pid`, único por réplica.
+**Compose.** `postgres`, `sqs` e `keycloak` com healthcheck (o do Keycloak, na porta de gerenciamento 9000). Antes do Keycloak, `keycloak-database` roda uma vez e cria o papel e o banco `keycloak` no PostgreSQL, se não existirem. `bootstrap` roda uma vez depois de `postgres` e `sqs`; `api` (porta 3000) e `worker` (sem porta publicada, escalável com `--scale worker=3`) esperam `service_completed_successfully` do bootstrap. Os três papéis usam a mesma imagem, com o processo iniciado direto pelo Bun (forma exec), usuário sem privilégio, `init: true`, `stop_grace_period: 30s` e healthcheck em `/health/ready`. O `INSTANCE_ID` padrão é `hostname-pid`, único por réplica.
+
+**Hardening.** Todo serviço roda com:
+- raiz somente leitura (`read_only`), com `tmpfs` só onde o processo precisa escrever;
+- `cap_drop: ALL` e `no-new-privileges`. O PostgreSQL devolve só as cinco capabilities que o entrypoint usa para entregar os diretórios ao usuário `postgres`;
+- limites de CPU e de memória;
+- imagens fixadas por versão e digest, inclusive no `FROM` do `Dockerfile` e no da imagem do Keycloak.
+
+O Bun roda sem cache de transpilação em disco (`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0`). O teste `test/integration/infra/compose-policy.test.ts` lê o `docker compose --profile observability config` e falha se algum serviço perder uma dessas propriedades. O override do harness de carga só aumenta os limites do PostgreSQL e do MiniStack.
 
 **SIGTERM** (`enableShutdownHooks`):
 
@@ -480,6 +489,13 @@ A suíte (`bun run test`, 1.073 testes, cerca de 2,7 minutos) roda contra Postgr
 ## Autenticação e autorização
 
 Entregue depois da versão avaliada do desafio (tag `desafio-v1`, que tinha só o ponto de extensão no-op). O IdP é o **Keycloak 26.8.0**, no Compose, com o realm `wagering` importado de [keycloak/wagering-realm.json](keycloak/wagering-realm.json). Todos os clientes são sistemas (provedores, back office, Prometheus), então todos usam `client_credentials`; o serviço não guarda usuário nem senha.
+
+**Modo produção.**
+- **Imagem e banco:** o Keycloak roda com `start --optimized`, numa imagem construída por [keycloak/Dockerfile](keycloak/Dockerfile) (`kc.sh build` com `KC_DB=postgres` e health), e guarda o realm no banco `keycloak` do PostgreSQL.
+- **Credenciais:** as de administração e a do banco vêm de variáveis (`KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_DB_PASSWORD`). Os padrões só servem para o ambiente local.
+- **Escopo dos clientes:** nenhum cliente tem escopo total (`fullScopeAllowed: false`). O token de cada um leva só os papéis mapeados para ele: `operator` para `wagering-operator` e `metrics-reader` para `wagering-metrics`. Um teste confere o realm.
+- **HTTP no ambiente local:** fora dele, o TLS termina num proxy ou no próprio Keycloak (`KC_HTTPS_*`), e `KC_HOSTNAME` passa a ser o endereço público.
+- **Importação do realm:** acontece na primeira subida e não sobrescreve um realm existente. Depois de editar o JSON, a reimportação está no README.
 
 **Contrato do token** (montado pelos mappers de cada cliente do realm):
 
@@ -580,6 +596,7 @@ Cada réplica aceita até `STREAM_MAX_STREAMS` (1000) streams; acima disso respo
 
 - **Transação aberta durante o envio ao SQS** no publisher: mantém o modelo `OutboxMessage` simples e o claim seguro com `SKIP LOCKED`, ao custo de segurar as linhas da outbox (nunca a wallet) por até `SQS_PUBLISH_TIMEOUT_MS`.
 - **Contador de falhas do scheduler em memória:** com N instâncias, chegar a FAILED pode levar até N vezes mais tentativas. Só afeta o caminho de erro não negocial.
+- **Realm importado só na primeira subida:** com o banco persistente, o Keycloak não reaplica o `wagering-realm.json` a cada subida, como fazia o `start-dev`. Editar o JSON pede a reimportação descrita no README.
 - **Ordem dos eventos** é a de publicação, não a de commit; o consumidor usa `eventId` e `walletVersion`.
 - **Uma wallet muito disputada** serializa no lock da linha: a vazão por wallet é limitada pela duração da transação (curta, sem I/O externo); `lock_timeout` de 3 s vira 503 ou backoff.
 - **Várias instâncias da api** são demonstradas pelo harness de testes (portas distintas); o Compose não tem load balancer.
