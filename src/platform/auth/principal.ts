@@ -2,6 +2,7 @@ export interface Principal {
   readonly subject: string;
   readonly providerId: string | undefined;
   readonly roles: readonly string[];
+  readonly expiresAt: Date;
 }
 
 export const OPERATOR = 'operator';

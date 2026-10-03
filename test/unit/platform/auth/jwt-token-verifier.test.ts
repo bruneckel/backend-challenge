@@ -56,7 +56,21 @@ describe('JwtTokenVerifier', () => {
       subject: 'service-account-provider-a',
       providerId: 'provider-a',
       roles: [],
+      expiresAt: expect.any(Date),
     });
+  });
+
+  test('carries the token expiration', async () => {
+    const token = await identity.sign({
+      providerId: 'provider-a',
+      expiresInSeconds: 120,
+    });
+
+    const { expiresAt } = await verifierFor(identity).verify(token);
+
+    const remaining = expiresAt.getTime() - Date.now();
+    expect(remaining).toBeGreaterThan(115_000);
+    expect(remaining).toBeLessThanOrEqual(120_000);
   });
 
   test('returns the roles of an operator token', async () => {
@@ -66,6 +80,7 @@ describe('JwtTokenVerifier', () => {
       subject: 'service-account-wagering',
       providerId: undefined,
       roles: ['operator'],
+      expiresAt: expect.any(Date),
     });
   });
 
