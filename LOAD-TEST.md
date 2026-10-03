@@ -215,6 +215,15 @@ Leitura:
 - **Com 1.000 ms:** a cauda é a mesma, mas a capacidade cai para cerca de 950 linhas por segundo, menos do que 600 req/s criam.
 - **Decisão:** `RETENTION_BATCH_PAUSE_MS` = 250 por padrão. O teto de cada tabela é `RETENTION_BATCH_SIZE / (duração do lote + pausa)`.
 
+**Configuração final.** O mesmo preset rodou com a pausa de 250 ms e a posição do lote (abaixo), em duas rodadas em ordem inversa:
+
+| Retenção | p50 | p90 | p95 | p99 | Expurgo na janela |
+|---|---|---|---|---|---|
+| ligada | 3,6 · 3,6 | 5,2 · 5,2 | 5,8 · 5,7 | 9,9 · 8,6 | 678 e 679 mil eventos, e o mesmo número de mensagens |
+| desligada | 3,6 · 3,6 | 5,1 · 5,1 | 5,5 · 5,7 | 7,2 · 9,3 | — |
+
+A retenção pondo em dia uma base que nunca foi limpa ficou indistinguível da retenção desligada, com 0 violações em 1 milhão de wallets nas quatro execuções.
+
 **Primeira medição, guardada como pior caso.** Ela usou a semente original, com as datas sem relação com a posição física, e o PostgreSQL nos padrões da imagem.
 - Cada lote tocava cerca de 1.000 páginas espalhadas, em vez de umas 125 contíguas.
 - Os checkpoints por volume de WAL vinham a cada 20 a 150 s, mesmo com a retenção desligada.
