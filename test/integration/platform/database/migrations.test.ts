@@ -121,6 +121,25 @@ describe('wagering schema migrations', () => {
     expect(constraint).toEqual({ convalidated: true });
   });
 
+  test('scope the idempotency key by provider without a global unique index', async () => {
+    await migrateUp(database.url);
+
+    const indexes: { indexname: string }[] = await database.sql`
+      select indexname from pg_indexes
+      where tablename = 'wager_transactions' and indexdef like '%idempotency_key%'
+      order by indexname`;
+    const [constraint] = await database.sql`
+      select pg_get_constraintdef(oid) as definition from pg_constraint
+      where conname = 'wager_transactions_provider_idempotency_key_key'`;
+
+    expect(indexes.map((row) => row.indexname)).toEqual([
+      'wager_transactions_provider_idempotency_key_key',
+    ]);
+    expect(constraint).toEqual({
+      definition: 'UNIQUE (provider_id, idempotency_key)',
+    });
+  });
+
   test('apply nothing when the schema is already current', async () => {
     await migrateUp(database.url);
 

@@ -142,7 +142,7 @@ A migration `src/platform/database/migrations/migration-20261002120000-create-wa
 |---|---|
 | uma wallet por `playerId` + `currency` | `UNIQUE (player_id, currency)` |
 | saldo nunca negativo | `CHECK` de sinal e escala em `wallets.balance_amount` e nos saldos do ledger |
-| idempotência | `UNIQUE (idempotency_key)` global e `UNIQUE (provider_id, external_transaction_id)` |
+| idempotência | `UNIQUE (provider_id, idempotency_key)` e `UNIQUE (provider_id, external_transaction_id)` |
 | no máximo um lançamento por transação e por wallet | `UNIQUE (wallet_id, transaction_id)` |
 | sem lost update | `UNIQUE (wallet_id, wallet_version)` no ledger |
 | reversão uma única vez por tipo (regra literal do enunciado §7.4) | índice único parcial `(reference_transaction_id, kind) WHERE status = 'PROCESSED' AND kind IN ('REFUND','ROLLBACK')` |
@@ -183,7 +183,7 @@ Um único caminho atende HTTP e SQS (`SubmitWagerTransaction`):
 
 1. **Fora da transação:** valida o contrato (`Money.from`, `WagerTransaction.create`) e calcula o fingerprint.
 2. Na unidade de trabalho: na entrada SQS, registra a inbox primeiro (mesmo hash → entrega duplicada; hash diferente → `MESSAGE_ID_CONFLICT`).
-3. Busca pela idempotency key, ainda sem lock: mesmo hash → replay com o resultado original; hash diferente → `IDEMPOTENCY_KEY_CONFLICT`.
+3. Busca pela idempotency key do provedor, ainda sem lock: mesmo hash → replay com o resultado original; hash diferente → `IDEMPOTENCY_KEY_CONFLICT`.
 4. `SELECT … FOR UPDATE` na wallet (inexistente → `WALLET_NOT_FOUND`), nova busca pela key sob o lock e busca por `(provider_id, external_transaction_id)` (`EXTERNAL_TRANSACTION_CONFLICT`).
 5. Decisão pura da `SettlementPolicy`, com a referência resolvida sob o mesmo lock.
 6. Escritas na ordem: transação (com o saldo observado) → wallet com versão esperada → lançamento → eventos na outbox → inbox marcada como processada.
@@ -291,7 +291,7 @@ Toda rota, menos as de health, responde 401 sem token válido e 403 quando o tok
 Um único filtro global aplica essa tabela em todos os endpoints. Erros de validação listam o caminho e a mensagem de cada campo, nunca o valor recebido. O 409 `WALLET_ALREADY_EXISTS` traz o membro de extensão `walletId`, com o id da wallet que já existe para aquele player e moeda, para o cliente repetir a criação com segurança.
 
 - **Validação:** schemas Zod via Standard Schema, com objetos estritos (campo desconhecido → 400) e valores com exatamente duas casas e no máximo 17 dígitos inteiros.
-- **Idempotência:** header `Idempotency-Key` obrigatório no `POST /wagering/transactions`.
+- **Idempotência:** header `Idempotency-Key` obrigatório no `POST /wagering/transactions`, com escopo no provedor: a mesma key usada por dois provedores gera duas transações, e cada provedor só vê o replay e o conflito das próprias keys.
 - **Correlação:** `X-Correlation-Id` aceito quando tem de 1 a 128 caracteres ASCII visíveis, senão substituído por um UUIDv7; devolvido em toda resposta, gravado na transação e presente em todos os logs da requisição.
 
 ## Entrada por SQS
@@ -549,7 +549,7 @@ A autenticação roda antes de tudo: antes da validação do corpo, da `Idempote
 
 **Custo medido:** cerca de 40 µs de CPU por requisição na api, ou 3 a 5% da vazão de um processo saturado (A/B em [LOAD-TEST.md](LOAD-TEST.md#custo-da-autenticação)); a latência fora da saturação não muda.
 
-**Fora desta etapa:** o painel futuro usaria Authorization Code com PKCE e cliente público, com papéis de operação e auditoria separados dos provedores; mTLS entre serviços; escopo da idempotência por provedor (adiado no plano; como a `Idempotency-Key` é global, um provedor consegue saber, pelo 409 `IDEMPOTENCY_KEY_CONFLICT`, que uma key já foi usada por outro, sem ver o resultado nem reaproveitá-lo, porque o corpo dele leva o próprio `providerId`); revogação imediata (o token vale 5 minutos; revogar uma chave é removê-la do JWKS, e o cache a abandona em até 10 minutos).
+**Fora desta etapa:** o painel futuro usaria Authorization Code com PKCE e cliente público, com papéis de operação e auditoria separados dos provedores; mTLS entre serviços; revogação imediata (o token vale 5 minutos; revogar uma chave é removê-la do JWKS, e o cache a abandona em até 10 minutos).
 
 ## Tempo real (SSE)
 
@@ -602,6 +602,11 @@ Cada réplica aceita até `STREAM_MAX_STREAMS` (1000) streams; acima disso respo
 | Teste de carga | fora da versão avaliada; entregue depois, em [LOAD-TEST.md](LOAD-TEST.md) |
 | IdP | fora da versão avaliada; entregue depois com Keycloak (ver [Autenticação e autorização](#autenticação-e-autorização)) |
 | Double-entry, OpenTelemetry, dashboard | **não**, decididos no plano |
+
+**Escopo da idempotência por provedor.** A versão avaliada tinha a `Idempotency-Key` global, e a mesma key vinda de dois provedores dava 409. Assim, um provedor descobria pelo 409 `IDEMPOTENCY_KEY_CONFLICT` que outro já tinha usado aquela key, sem ver o resultado nem reaproveitá-lo.
+- **Agora:** a unicidade é `(provider_id, idempotency_key)`. O enunciado faz da key a fonte da verdade e recomenda o formato `{providerId}:{externalTransactionId}`, sem fixar o escopo, e a key continua sendo a fonte da verdade dentro do provedor autenticado.
+- **Migration `20261004130000`:** roda fora de transação, seguindo a regra de tabela grande. Cria o índice novo com `CONCURRENTLY`, promove-o a constraint e remove a global por último. Numa cópia com 6 milhões de transações, levou 7 s sem parar leitura nem escrita (ver LOAD-TEST.md).
+- **Volta atrás:** o `down` recria o índice global e falha se dois provedores já tiverem usado a mesma key, o que é o esperado. O índice inválido que sobra precisa ser removido antes de tentar de novo.
 
 ## Trade-offs e limitações
 

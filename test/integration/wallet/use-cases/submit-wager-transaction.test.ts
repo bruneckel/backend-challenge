@@ -386,6 +386,28 @@ describe('SubmitWagerTransaction idempotency', () => {
     expect(await rowCounts(wallet.id)).toEqual(before);
   });
 
+  test('keeps the idempotency key of each provider apart', async () => {
+    const wallet = await walletWith('100.00');
+    const key = `shared-${Bun.randomUUIDv7()}`;
+    const fromA = command(wallet, Bet, '10.00', { idempotencyKey: key });
+    const fromB = command(wallet, Bet, '15.00', {
+      providerId: 'provider-b',
+      idempotencyKey: key,
+    });
+
+    const first = await submit(fromA);
+    const second = await submit(fromB);
+
+    expect([first.status, second.status]).toEqual(['PROCESSED', 'PROCESSED']);
+    expect(second.transactionId).not.toBe(first.transactionId);
+    expect(second.idempotentReplay).toBe(false);
+    expect(await submit(fromB)).toMatchObject({
+      transactionId: second.transactionId,
+      idempotentReplay: true,
+    });
+    expect(await rowCounts(wallet.id)).toMatchObject({ transactions: 3 });
+  });
+
   test('refuses a new idempotency key for an external id that was already used', async () => {
     const wallet = await walletWith('100.00');
     const bet = command(wallet, Bet, '25.00');

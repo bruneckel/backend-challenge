@@ -3,6 +3,7 @@ import { Migration20261003140000AllowBalanceLimitFailureCode } from './migration
 import { Migration20261003160000IndexInboxReceivedAt } from './migration-20261003160000-index-inbox-received-at';
 import { Migration20261003170000GuardWalletBalanceWithLedger } from './migration-20261003170000-guard-wallet-balance-with-ledger';
 import { Migration20261004120000CreateMaintenanceLeases } from './migration-20261004120000-create-maintenance-leases';
+import { Migration20261004130000ScopeIdempotencyKeyByProvider } from './migration-20261004130000-scope-idempotency-key-by-provider';
 
 export const migrations = [
   Migration20261002120000CreateWageringSchema,
@@ -10,4 +11,5 @@ export const migrations = [
   Migration20261003160000IndexInboxReceivedAt,
   Migration20261003170000GuardWalletBalanceWithLedger,
   Migration20261004120000CreateMaintenanceLeases,
+  Migration20261004130000ScopeIdempotencyKeyByProvider,
 ];

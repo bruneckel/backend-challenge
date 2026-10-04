@@ -467,22 +467,26 @@ describe('wager_transactions uniqueness', () => {
       ),
     ).toEqual({
       sqlState: SqlState.UniqueViolation,
-      constraint: 'wager_transactions_idempotency_key_key',
+      constraint: 'wager_transactions_provider_idempotency_key_key',
     });
   });
 
-  test('refuses the same idempotency key from another provider', async () => {
+  test('accepts the same idempotency key from another provider', async () => {
     const first = await stored();
 
     const sameKeyOtherProvider = transaction({
       provider_id: 'provider-b',
       idempotency_key: first.idempotency_key,
     });
+    await insertTransaction(sameKeyOtherProvider);
 
-    expect(await violationOf(insertTransaction(sameKeyOtherProvider))).toEqual({
-      sqlState: SqlState.UniqueViolation,
-      constraint: 'wager_transactions_idempotency_key_key',
-    });
+    const rows = await database.sql`
+      select provider_id from wager_transactions
+      where idempotency_key = ${first.idempotency_key} order by provider_id`;
+    expect(rows).toEqual([
+      { provider_id: 'provider-a' },
+      { provider_id: 'provider-b' },
+    ]);
   });
 
   test('refuses a second transaction with the same provider and external id', async () => {

@@ -349,6 +349,28 @@ describe('POST /wagering/transactions', () => {
     expect(response.body.retryable).toBe(false);
   });
 
+  test('accepts the same Idempotency-Key from two providers as two transactions', async () => {
+    const wallet = await openWallet();
+    const fromA = submission(wallet, 'BET', '10.00');
+    const fromB = {
+      key: fromA.key,
+      body: {
+        ...submission(wallet, 'BET', '5.00').body,
+        providerId: 'provider-b',
+      },
+    };
+
+    const first = await submit(fromA);
+    const second = await submit(fromB);
+
+    expect([first.status, second.status]).toEqual([200, 200]);
+    expect(second.body).toMatchObject({
+      status: 'PROCESSED',
+      idempotentReplay: false,
+    });
+    expect(second.body.transactionId).not.toBe(first.body.transactionId);
+  });
+
   test('answers 409 EXTERNAL_TRANSACTION_CONFLICT for a new key on an external id already used', async () => {
     const wallet = await openWallet();
     const request = submission(wallet, 'BET', '10.00');

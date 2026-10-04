@@ -21,7 +21,7 @@ import {
 } from './wager-transaction-record';
 
 const DUPLICATE_KEYS: Readonly<Record<string, DuplicateTransactionKey>> = {
-  wager_transactions_idempotency_key_key: 'IDEMPOTENCY_KEY',
+  wager_transactions_provider_idempotency_key_key: 'IDEMPOTENCY_KEY',
   wager_transactions_provider_external_key: 'EXTERNAL_TRANSACTION',
 };
 
@@ -33,9 +33,10 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
   }
 
   findByIdempotencyKey(
+    providerId: string,
     idempotencyKey: string,
   ): Promise<WagerTransaction | null> {
-    return this.findOne({ idempotencyKey });
+    return this.findOne({ providerId, idempotencyKey });
   }
 
   findByExternalId(
