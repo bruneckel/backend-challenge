@@ -22,7 +22,7 @@ O relatório (`report.md`), os dados brutos (`results.json`) e os logs de cada p
 
 | Opção | Padrão | Significado |
 |---|---|---|
-| `--preset` | — | `smoke` ou `baseline`; as demais opções sobrescrevem todos os cenários do preset |
+| `--preset` | — | `smoke`, `baseline`, `scale` ou `retention`; as demais opções sobrescrevem todos os cenários do preset |
 | `--only` | — | roda só os cenários listados (separados por vírgula) |
 | `--profile` | `sustained` | `sustained`, `spike`, `saturation`, `backlog`, `publish` ou `recovery` |
 | `--channel` | `http` | `http`, `sqs` ou `mixed` |
@@ -65,6 +65,7 @@ O relatório (`report.md`), os dados brutos (`results.json`) e os logs de cada p
 | `spike` | reação a um degrau de carga | taxa base, pico e base de novo, em terços da duração |
 | `saturation` | capacidade e o ponto em que a latência dispara | malha fechada: N clientes concorrentes por degrau |
 | `backlog` | vazão máxima do consumidor SQS | enfileira N mensagens, sobe os workers e mede a drenagem |
+| `publish` | vazão da outbox | grava N operações por HTTP com os workers parados, sobe os workers e mede a publicação |
 | `recovery` | comportamento com o PostgreSQL fora | `docker pause` no PostgreSQL do projeto de carga durante a medição |
 
 ## O que é medido
