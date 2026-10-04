@@ -217,6 +217,13 @@ Os testes precisam do PostgreSQL e do MiniStack de pé (`bun run infra:up`). Cad
 | `bun run test:load --preset smoke` | teste de carga em infraestrutura isolada própria; metodologia, presets e baseline em [LOAD-TEST.md](LOAD-TEST.md) |
 | `bun run typecheck` · `bun run lint` · `bun run format` | `tsc --noEmit`; ESLint e Prettier em modo de checagem; formatação |
 
+**CI.** O workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) roda em toda PR e em cada push na `main`, em três jobs:
+- `checks`: lint e typecheck;
+- `test`: a suíte e o spike, com PostgreSQL e MiniStack como serviços, nas mesmas imagens do Compose;
+- `e2e`: sobe o Compose inteiro com o profile de métricas e roda o e2e.
+
+Um teste falha se a versão do Bun ou as imagens dos serviços da CI divergirem das do projeto.
+
 ## Variáveis de ambiente
 
 Todas são validadas no boot; um valor inválido derruba o processo com uma mensagem que cita o nome da variável (nunca o valor).

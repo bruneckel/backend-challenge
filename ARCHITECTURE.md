@@ -449,6 +449,12 @@ Num SIGKILL nada disso roda, e a correção vem do banco: a transação aberta s
 
 A suíte (`bun run test`, 1.081 testes, cerca de 2,7 minutos) roda contra PostgreSQL e MiniStack reais; a da versão avaliada (799 testes) passou 10 vezes seguidas sem falha. Cada suíte de integração e de concorrência usa um banco criado para ela e filas com prefixo único. **Todo teste que opera o sistema** — pelos casos de uso, pela API HTTP, pelo consumidor, pelo scheduler, pelo publisher ou por processos reais — termina com um verificador que confere, para cada wallet do banco: saldo = ledger, cadeia de lançamentos contínua, versão coerente, exatamente um lançamento por transação PROCESSED que move saldo (zero para REJECTED e LOSS) e nenhuma reversão duplicada do mesmo tipo. Só ficam de fora as wallets corrompidas de propósito pelos testes de reconciliação, excluídas pelo nome. Os testes de schema e de repositório montam linhas à mão para exercitar uma constraint ou uma primitiva por vez. Desde as constraint triggers saldo ⇔ ledger, essas linhas também formam estados coerentes no commit.
 
+**CI.** O GitHub Actions roda lint, typecheck, a suíte, o spike e o e2e em toda PR e em cada push na `main` (`.github/workflows/ci.yml`).
+- **Ações fixadas por commit:** `actions/checkout` v7.0.1 e `oven-sh/setup-bun` v2.2.0.
+- **Permissão:** só de leitura (`contents: read`).
+- **Serviços da suíte:** PostgreSQL e MiniStack nos mesmos digests do Compose. O e2e sobe o Compose inteiro, o que também prova a subida do zero com o hardening.
+- **Teste de política:** `test/unit/infra/ci-workflow.test.ts` falha se uma action perder o pin, se a versão do Bun divergir da do `Dockerfile`, se as imagens divergirem das do Compose ou se uma das verificações sumir.
+
 | Id | Cenário | Onde |
 |---|---|---|
 | C1 | a mesma BET 50 vezes em paralelo → 1 débito e 49 replays idênticos: em processo, via 3 processos da api e com 25 cópias via HTTP e 25 via SQS (grupos e ids de deduplicação distintos) em 3 api e 3 workers | `concurrency/in-process/same-bet-fifty-times`, `multi-process/http-instances`, `multi-process/mixed-load` |
