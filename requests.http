@@ -1,0 +1,192 @@
+@api = http://localhost:3000
+@keycloak = http://localhost:8080/realms/wagering/protocol/openid-connect/token
+
+### Processo de pé
+# expect: 200
+GET {{api}}/health/live
+
+### PostgreSQL e SQS alcançáveis
+# expect: 200
+GET {{api}}/health/ready
+
+### Token do operador
+# @name operator
+# expect: 200
+POST {{keycloak}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=wagering-operator&client_secret=wagering-operator-secret
+
+### Token do provider-a
+# @name provider
+# expect: 200
+POST {{keycloak}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=provider-a&client_secret=provider-a-secret
+
+### Abrir uma wallet com 100.00 para um player novo
+# @name wallet
+# expect: 201
+POST {{api}}/wallets
+Authorization: Bearer {{operator.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "playerId": "{{$guid}}",
+  "initialBalance": { "amount": "100.00", "currency": "BRL" }
+}
+
+### Apostar 25.00
+# @name bet
+# expect: 200
+POST {{api}}/wagering/transactions
+Authorization: Bearer {{provider.response.body.$.access_token}}
+Content-Type: application/json
+Idempotency-Key: provider-a:bet-{{wallet.response.body.$.id}}
+
+{
+  "providerId": "provider-a",
+  "externalTransactionId": "bet-{{wallet.response.body.$.id}}",
+  "playerId": "{{wallet.response.body.$.playerId}}",
+  "walletId": "{{wallet.response.body.$.id}}",
+  "roundId": "round-1",
+  "gameId": "fortune-chimp",
+  "kind": "BET",
+  "money": { "amount": "25.00", "currency": "BRL" }
+}
+
+### Repetir a mesma aposta
+# expect: 200
+POST {{api}}/wagering/transactions
+Authorization: Bearer {{provider.response.body.$.access_token}}
+Content-Type: application/json
+Idempotency-Key: provider-a:bet-{{wallet.response.body.$.id}}
+
+{
+  "providerId": "provider-a",
+  "externalTransactionId": "bet-{{wallet.response.body.$.id}}",
+  "playerId": "{{wallet.response.body.$.playerId}}",
+  "walletId": "{{wallet.response.body.$.id}}",
+  "roundId": "round-1",
+  "gameId": "fortune-chimp",
+  "kind": "BET",
+  "money": { "amount": "25.00", "currency": "BRL" }
+}
+
+### Mesma Idempotency-Key com outro valor
+# expect: 409
+POST {{api}}/wagering/transactions
+Authorization: Bearer {{provider.response.body.$.access_token}}
+Content-Type: application/json
+Idempotency-Key: provider-a:bet-{{wallet.response.body.$.id}}
+
+{
+  "providerId": "provider-a",
+  "externalTransactionId": "bet-{{wallet.response.body.$.id}}",
+  "playerId": "{{wallet.response.body.$.playerId}}",
+  "walletId": "{{wallet.response.body.$.id}}",
+  "roundId": "round-1",
+  "gameId": "fortune-chimp",
+  "kind": "BET",
+  "money": { "amount": "30.00", "currency": "BRL" }
+}
+
+### Ganhar 40.00 na mesma rodada
+# expect: 200
+POST {{api}}/wagering/transactions
+Authorization: Bearer {{provider.response.body.$.access_token}}
+Content-Type: application/json
+Idempotency-Key: provider-a:win-{{wallet.response.body.$.id}}
+
+{
+  "providerId": "provider-a",
+  "externalTransactionId": "win-{{wallet.response.body.$.id}}",
+  "playerId": "{{wallet.response.body.$.playerId}}",
+  "walletId": "{{wallet.response.body.$.id}}",
+  "roundId": "round-1",
+  "gameId": "fortune-chimp",
+  "kind": "WIN",
+  "money": { "amount": "40.00", "currency": "BRL" },
+  "referenceExternalTransactionId": "bet-{{wallet.response.body.$.id}}"
+}
+
+### Apostar mais do que o saldo
+# expect: 422
+POST {{api}}/wagering/transactions
+Authorization: Bearer {{provider.response.body.$.access_token}}
+Content-Type: application/json
+Idempotency-Key: provider-a:big-{{wallet.response.body.$.id}}
+
+{
+  "providerId": "provider-a",
+  "externalTransactionId": "big-{{wallet.response.body.$.id}}",
+  "playerId": "{{wallet.response.body.$.playerId}}",
+  "walletId": "{{wallet.response.body.$.id}}",
+  "roundId": "round-2",
+  "gameId": "fortune-chimp",
+  "kind": "BET",
+  "money": { "amount": "1000.00", "currency": "BRL" }
+}
+
+### Reembolsar uma aposta que ainda não chegou
+# expect: 202
+POST {{api}}/wagering/transactions
+Authorization: Bearer {{provider.response.body.$.access_token}}
+Content-Type: application/json
+Idempotency-Key: provider-a:refund-{{wallet.response.body.$.id}}
+
+{
+  "providerId": "provider-a",
+  "externalTransactionId": "refund-{{wallet.response.body.$.id}}",
+  "playerId": "{{wallet.response.body.$.playerId}}",
+  "walletId": "{{wallet.response.body.$.id}}",
+  "roundId": "round-3",
+  "gameId": "fortune-chimp",
+  "kind": "REFUND",
+  "money": { "amount": "10.00", "currency": "BRL" },
+  "referenceExternalTransactionId": "late-{{wallet.response.body.$.id}}"
+}
+
+### A aposta referenciada chega depois
+# expect: 200
+POST {{api}}/wagering/transactions
+Authorization: Bearer {{provider.response.body.$.access_token}}
+Content-Type: application/json
+Idempotency-Key: provider-a:late-{{wallet.response.body.$.id}}
+
+{
+  "providerId": "provider-a",
+  "externalTransactionId": "late-{{wallet.response.body.$.id}}",
+  "playerId": "{{wallet.response.body.$.playerId}}",
+  "walletId": "{{wallet.response.body.$.id}}",
+  "roundId": "round-3",
+  "gameId": "fortune-chimp",
+  "kind": "BET",
+  "money": { "amount": "10.00", "currency": "BRL" }
+}
+
+### Consultar o reembolso pelo id do provedor
+# expect: 200
+GET {{api}}/providers/provider-a/wagering/transactions/refund-{{wallet.response.body.$.id}}
+Authorization: Bearer {{provider.response.body.$.access_token}}
+
+### Consultar a aposta pelo id interno
+# expect: 200
+GET {{api}}/wagering/transactions/{{bet.response.body.$.transactionId}}
+Authorization: Bearer {{provider.response.body.$.access_token}}
+
+### Saldo da wallet
+# expect: 200
+GET {{api}}/wallets/{{wallet.response.body.$.id}}
+Authorization: Bearer {{operator.response.body.$.access_token}}
+
+### Ledger, do lançamento mais novo para o mais antigo
+# expect: 200
+GET {{api}}/wallets/{{wallet.response.body.$.id}}/ledger?limit=10
+Authorization: Bearer {{operator.response.body.$.access_token}}
+
+### Reconciliar saldo com o ledger
+# expect: 200
+POST {{api}}/wallets/{{wallet.response.body.$.id}}/reconciliation
+Authorization: Bearer {{operator.response.body.$.access_token}}
