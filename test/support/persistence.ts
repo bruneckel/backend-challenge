@@ -1,5 +1,7 @@
 import type { MikroORM } from '@mikro-orm/postgresql';
+import type { RetentionScope } from '@messaging/application/ports/retention-scope';
 import { messagingEntities } from '@messaging/infrastructure/persistence/messaging-entities';
+import { createRetentionScope } from '@messaging/infrastructure/persistence/retention-scope';
 import { MikroOrmUnitOfWork } from '@platform/database/mikro-orm-unit-of-work';
 import { createOrm } from '@platform/database/orm';
 import type { UnitOfWork } from '@shared/application/unit-of-work';
@@ -12,6 +14,7 @@ export interface PersistenceHarness {
   readonly database: TestDatabase;
   readonly orm: MikroORM;
   readonly unitOfWork: UnitOfWork<WageringScope>;
+  readonly retentionUnitOfWork: UnitOfWork<RetentionScope>;
   close(): Promise<void>;
 }
 
@@ -28,6 +31,9 @@ export async function createPersistenceHarness(): Promise<PersistenceHarness> {
     database,
     orm,
     unitOfWork,
+    retentionUnitOfWork: new MikroOrmUnitOfWork(orm, createRetentionScope, {
+      lockTimeoutMs: 2000,
+    }),
     async close() {
       await orm.close(true);
       await database.drop();

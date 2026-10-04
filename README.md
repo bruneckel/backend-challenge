@@ -286,6 +286,7 @@ Todas são validadas no boot; um valor inválido derruba o processo com uma mens
 | `RETENTION_ENABLED` | `true` | liga a limpeza de eventos publicados e mensagens processadas |
 | `OUTBOX_RETENTION_HOURS` · `INBOX_RETENTION_HOURS` | `168` · `360` | quanto tempo eventos publicados e mensagens processadas ficam guardados (a inbox aceita no mínimo 168) |
 | `RETENTION_BATCH_SIZE` · `RETENTION_BATCH_PAUSE_MS` · `RETENTION_INTERVAL_MS` | `1000` · `250` · `60000` | linhas por lote, pausa entre lotes cheios e espera quando não há o que apagar |
+| `RETENTION_LEASE_MS` | `180000` | duração do lease que deixa uma réplica de worker por vez apagar; maior que `RETENTION_INTERVAL_MS` |
 | `STREAM_SWEEP_INTERVAL_MS` | `500` | intervalo em que cada réplica confere as wallets assinadas (latência máxima de entrega) |
 | `STREAM_HEARTBEAT_INTERVAL_MS` | `15000` | comentário `keep-alive` nos streams parados |
 | `STREAM_MAX_STREAMS` | `1000` | streams abertos por réplica; acima disso, 503 `STREAM_CAPACITY_EXCEEDED` |
@@ -300,7 +301,7 @@ O Compose é o ambiente local. Fora dele, estes pontos mudam, cada um com a medi
 | Migrations em tabela grande | — | índice com `CONCURRENTLY`, `CHECK` como `NOT VALID` + `VALIDATE` (ver ARCHITECTURE.md) |
 | Keycloak | HTTP, `admin`/`admin`, segredos fictícios dos clientes | TLS no proxy ou no Keycloak; `KC_HOSTNAME` no endereço público; segredos de administração, do banco e dos clientes gerados e guardados num cofre; o realm gerido como código |
 | JWKS | rede do Compose | HTTPS ou rede interna confiável |
-| Retenção | ligada no worker | ligada em uma ou duas réplicas do worker, porque o ritmo vale por réplica |
+| Retenção | ligada no worker | ligada em todas as réplicas: um lease no banco deixa só uma apagar por vez |
 | api e worker | 1 CPU e 512 MB por container | o Bun usa um núcleo por processo; escalar horizontalmente, com um balanceador na frente das apis |
 | SQS | MiniStack | SQS real, com a DLQ e o redrive do bootstrap |
 

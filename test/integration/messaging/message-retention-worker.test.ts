@@ -29,7 +29,7 @@ import { WalletBalanceChanged } from '@wallet/domain/events/wallet-balance-chang
 let harness: PersistenceHarness;
 let sqs: SQSClient;
 let queues: TestQueues;
-let worker: INestApplication;
+let worker: INestApplication | undefined;
 
 beforeAll(async () => {
   harness = await createPersistenceHarness();
@@ -128,5 +128,23 @@ describe('message retention in the worker', () => {
     await waitUntil(async () => (await storedIds()).length === 0, {
       description: 'the remaining batches to be purged after their pauses',
     });
+  });
+
+  test('releases the retention lease when the worker stops', async () => {
+    await startWorker({ INSTANCE_ID: 'worker-lease' });
+    const lease = async () => {
+      const [row] = await harness.database.sql`
+        select holder, expires_at <= now() as released
+        from maintenance_leases where name = 'message-retention'`;
+      return row;
+    };
+    await waitUntil(async () => (await lease())?.holder === 'worker-lease', {
+      description: 'the worker to take the retention lease',
+    });
+
+    await worker?.close();
+    worker = undefined;
+
+    expect(await lease()).toEqual({ holder: 'worker-lease', released: true });
   });
 });

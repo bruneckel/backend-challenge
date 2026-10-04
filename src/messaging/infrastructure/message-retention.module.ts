@@ -28,9 +28,9 @@ export class MessageRetentionRunner
   private readonly loop: PollingLoop;
 
   constructor(
-    purge: PurgeExpiredMessages,
+    private readonly purge: PurgeExpiredMessages,
     @Inject(APP_CONFIG) config: AppConfig,
-    @Inject(LOGGER) logger: Logger,
+    @Inject(LOGGER) private readonly logger: Logger,
   ) {
     this.loop = new PollingLoop({
       step: async () => {
@@ -57,6 +57,11 @@ export class MessageRetentionRunner
 
   async beforeApplicationShutdown(): Promise<void> {
     await this.loop.stop();
+    await this.purge.releaseLease().catch((error: unknown) =>
+      this.logger.warn('message retention lease not released', {
+        errorName: error instanceof Error ? error.name : typeof error,
+      }),
+    );
   }
 }
 
@@ -87,6 +92,8 @@ export class MessageRetentionRunner
             outboxRetentionHours: config.retention.outboxHours,
             inboxRetentionHours: config.retention.inboxHours,
             batchSize: config.retention.batchSize,
+            holder: config.instanceId,
+            leaseMs: config.retention.leaseMs,
           },
         }),
       inject: [RETENTION_UNIT_OF_WORK, CLOCK, METRICS, APP_CONFIG],

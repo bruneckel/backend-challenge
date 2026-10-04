@@ -76,6 +76,7 @@ export interface AppConfig {
     batchSize: number;
     batchPauseMs: number;
     intervalMs: number;
+    leaseMs: number;
   };
 }
 
@@ -192,6 +193,7 @@ const environmentSchema = z
     RETENTION_BATCH_SIZE: integer(1000, 1, 10_000),
     RETENTION_BATCH_PAUSE_MS: integer(250, 0, 60_000),
     RETENTION_INTERVAL_MS: integer(60_000, 1000),
+    RETENTION_LEASE_MS: integer(180_000, 1000),
   })
   .refine(
     (env) => env.REFERENCE_BACKOFF_MAX_MS >= env.REFERENCE_BACKOFF_BASE_MS,
@@ -200,6 +202,10 @@ const environmentSchema = z
       message: 'must not be lower than REFERENCE_BACKOFF_BASE_MS',
     },
   )
+  .refine((env) => env.RETENTION_LEASE_MS > env.RETENTION_INTERVAL_MS, {
+    path: ['RETENTION_LEASE_MS'],
+    message: 'must be longer than RETENTION_INTERVAL_MS',
+  })
   .refine((env) => env.OUTBOX_RETRY_MAX_MS >= env.OUTBOX_RETRY_BASE_MS, {
     path: ['OUTBOX_RETRY_MAX_MS'],
     message: 'must not be lower than OUTBOX_RETRY_BASE_MS',
@@ -319,6 +325,7 @@ export function loadConfig(
       batchSize: values.RETENTION_BATCH_SIZE,
       batchPauseMs: values.RETENTION_BATCH_PAUSE_MS,
       intervalMs: values.RETENTION_INTERVAL_MS,
+      leaseMs: values.RETENTION_LEASE_MS,
     },
   };
 }

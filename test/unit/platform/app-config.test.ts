@@ -82,6 +82,7 @@ describe('loadConfig', () => {
         batchSize: 1000,
         batchPauseMs: 250,
         intervalMs: 60000,
+        leaseMs: 180000,
       },
     });
   });
@@ -143,6 +144,7 @@ describe('loadConfig', () => {
       RETENTION_BATCH_SIZE: '500',
       RETENTION_BATCH_PAUSE_MS: '0',
       RETENTION_INTERVAL_MS: '5000',
+      RETENTION_LEASE_MS: '20000',
     });
 
     expect(config).toEqual({
@@ -220,6 +222,7 @@ describe('loadConfig', () => {
         batchSize: 500,
         batchPauseMs: 0,
         intervalMs: 5000,
+        leaseMs: 20000,
       },
     });
   });
@@ -305,6 +308,11 @@ describe('loadConfig', () => {
       'a pause between retention batches above one minute',
       { RETENTION_BATCH_PAUSE_MS: '60001' },
       /RETENTION_BATCH_PAUSE_MS/,
+    ],
+    [
+      'a retention lease no longer than the retention interval',
+      { RETENTION_INTERVAL_MS: '60000', RETENTION_LEASE_MS: '60000' },
+      /RETENTION_LEASE_MS/,
     ],
     [
       'a clock skew above five minutes',
