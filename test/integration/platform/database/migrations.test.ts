@@ -7,6 +7,7 @@ import { type TestDatabase, createTestDatabase } from '@test/support/database';
 
 const SCHEMA_TABLES = [
   'inbox_messages',
+  'maintenance_leases',
   'outbox_messages',
   'wager_transactions',
   'wallet_ledger_entries',

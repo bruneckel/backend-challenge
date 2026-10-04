@@ -8,6 +8,8 @@ export interface RetentionSettings {
   outboxRetentionHours: number;
   inboxRetentionHours: number;
   batchSize: number;
+  holder: string;
+  leaseMs: number;
 }
 
 export interface PurgeExpiredMessagesDependencies {
@@ -23,6 +25,7 @@ export interface PurgeResult {
 }
 
 const HOUR_MS = 3_600_000;
+const LEASE = 'message-retention';
 
 export class PurgeExpiredMessages {
   private outboxAfter: string | undefined;
@@ -32,6 +35,14 @@ export class PurgeExpiredMessages {
 
   async execute(): Promise<PurgeResult> {
     const { clock, metrics, settings, unitOfWork } = this.deps;
+    const leading = await unitOfWork.run(({ leases }) =>
+      leases.acquire(LEASE, settings.holder, settings.leaseMs),
+    );
+    if (!leading) {
+      this.outboxAfter = undefined;
+      this.inboxFrom = undefined;
+      return { outbox: 0, inbox: 0 };
+    }
     const now = clock.now().getTime();
     const outbox = await unitOfWork.run(({ outbox: events }) =>
       events.deletePublishedBefore(
@@ -56,6 +67,13 @@ export class PurgeExpiredMessages {
       metrics.increment('inbox_messages_purged_total', {}, inbox.count);
     }
     return { outbox: outbox.count, inbox: inbox.count };
+  }
+
+  releaseLease(): Promise<void> {
+    const { settings, unitOfWork } = this.deps;
+    return unitOfWork.run(({ leases }) =>
+      leases.release(LEASE, settings.holder),
+    );
   }
 
   private nextPosition<TPosition>(

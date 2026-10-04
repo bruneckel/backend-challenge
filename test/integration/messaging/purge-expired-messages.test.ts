@@ -1,4 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'bun:test';
 import { PurgeExpiredMessages } from '@messaging/application/purge-expired-messages';
 import { InboxMessage } from '@messaging/domain/inbox-message';
 import { OutboxMessage } from '@messaging/domain/outbox-message';
@@ -19,6 +26,10 @@ let harness: PersistenceHarness;
 
 beforeAll(async () => {
   harness = await createPersistenceHarness();
+});
+
+afterEach(async () => {
+  await harness.database.sql`delete from maintenance_leases`;
 });
 
 afterAll(async () => {
@@ -112,13 +123,15 @@ describe('PurgeExpiredMessages', () => {
     const freshMessage = await processedMessage(300);
     const metrics = new RecordingMetrics();
     const purge = new PurgeExpiredMessages({
-      unitOfWork: harness.unitOfWork,
+      unitOfWork: harness.retentionUnitOfWork,
       clock: new FixedClock(NOW),
       metrics,
       settings: {
         outboxRetentionHours: 168,
         inboxRetentionHours: 360,
         batchSize: 2,
+        holder: 'worker-1',
+        leaseMs: 60_000,
       },
     });
 
@@ -152,13 +165,15 @@ describe('PurgeExpiredMessages', () => {
     await processedMessage(490);
     await processedMessage(480);
     const purge = new PurgeExpiredMessages({
-      unitOfWork: harness.unitOfWork,
+      unitOfWork: harness.retentionUnitOfWork,
       clock: new FixedClock(NOW),
       metrics: new RecordingMetrics(),
       settings: {
         outboxRetentionHours: 168,
         inboxRetentionHours: 360,
         batchSize: 1,
+        holder: 'worker-1',
+        leaseMs: 60_000,
       },
     });
 
@@ -188,6 +203,34 @@ describe('PurgeExpiredMessages', () => {
       outbox: [...before.outbox, lateEvent.id].sort(),
       inbox: [...before.inbox, lateMessage.messageId].sort(),
     });
+    expect(await remaining()).toEqual(before);
+  });
+
+  test('purges only on the replica that holds the retention lease', async () => {
+    const before = await remaining();
+    await publishedEvent(250);
+    await publishedEvent(240);
+    const replica = (holder: string) =>
+      new PurgeExpiredMessages({
+        unitOfWork: harness.retentionUnitOfWork,
+        clock: new FixedClock(NOW),
+        metrics: new RecordingMetrics(),
+        settings: {
+          outboxRetentionHours: 168,
+          inboxRetentionHours: 360,
+          batchSize: 1,
+          holder,
+          leaseMs: 60_000,
+        },
+      });
+    const first = replica('worker-1');
+    const second = replica('worker-2');
+
+    const runs = [await first.execute(), await second.execute()];
+    await first.releaseLease();
+    runs.push(await second.execute());
+
+    expect(runs.map((run) => run.outbox)).toEqual([1, 0, 1]);
     expect(await remaining()).toEqual(before);
   });
 });
