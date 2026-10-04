@@ -14,6 +14,16 @@ services:
       - checkpoint_timeout=15min
       - -c
       - wal_compression=lz4
+    deploy:
+      resources:
+        limits:
+          cpus: '10'
+          memory: 6G
   sqs:
     ports: !override
       - '24566:4566'
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G

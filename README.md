@@ -23,12 +23,29 @@ Sobe, nesta ordem:
 |---|---|
 | `postgres` | PostgreSQL 18.6 |
 | `sqs` | MiniStack 1.5.20 (SQS FIFO), sem credenciais |
-| `keycloak` | Keycloak 26.8.0 em `http://localhost:8080`, com o realm `wagering` importado de [keycloak/wagering-realm.json](keycloak/wagering-realm.json); console de administração com `admin`/`admin`, só para desenvolvimento |
+| `keycloak-database` | cria o papel e o banco `keycloak` no PostgreSQL, se não existirem; roda uma vez e termina com código 0 |
+| `keycloak` | Keycloak 26.8.0 em modo produção (`start --optimized`, imagem de [keycloak/Dockerfile](keycloak/Dockerfile)) em `http://localhost:8080`, com o realm `wagering` importado de [keycloak/wagering-realm.json](keycloak/wagering-realm.json) na primeira subida e guardado no banco `keycloak`; administração com `admin`/`admin` por padrão (`KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_DB_PASSWORD`), só para desenvolvimento |
 | `bootstrap` | aplica as migrations e cria as filas `wager-transactions.fifo`, `wager-transactions-dlq.fifo` e `wagering-events.fifo`; roda uma vez e termina com código 0 |
 | `api` | HTTP em `http://localhost:3000` |
 | `worker` | consome a fila de entrada, publica os eventos da outbox, resolve referências pendentes e apaga eventos e mensagens que passaram da retenção |
 
 `--wait` só retorna quando `api` e `worker` estão com `/health/ready` respondendo 200 e o Keycloak está pronto.
+
+Todo container roda com:
+- raiz somente leitura;
+- sem capabilities (`cap_drop: ALL`) e com `no-new-privileges`;
+- limites de CPU e memória;
+- imagem fixada por digest.
+
+Um teste confere essas regras no `docker compose config` (ver ARCHITECTURE.md, "Hardening").
+
+**Reimportar o realm.** O Keycloak só importa o realm quando ele não existe. Depois de editar `keycloak/wagering-realm.json`:
+
+```bash
+docker compose stop keycloak
+docker compose exec postgres dropdb -U wagering --force keycloak
+docker compose up -d --wait
+```
 
 ```bash
 docker compose up -d --scale worker=3 --wait   # três workers
@@ -36,6 +53,29 @@ docker compose logs -f api worker              # logs JSON
 docker compose stop api worker                 # parada graciosa (SIGTERM)
 docker compose down -v                         # remove tudo, inclusive o volume do banco
 ```
+
+### Painel de métricas
+
+```bash
+docker compose --profile observability up -d --build --wait
+```
+
+O profile `observability` soma dois serviços ao Compose:
+
+| Serviço | O que faz |
+|---|---|
+| `prometheus` | Prometheus 3.15.0 em `http://localhost:9090`. Coleta `/metrics` da api e do worker a cada 5 s com um token do client `wagering-metrics`, que ele mesmo pede ao Keycloak (`oauth2`, `client_credentials`). |
+| `grafana` | Grafana 13.2.3 em `http://localhost:3001`. Abre direto no painel **Wagering Processor**, com acesso anônimo de leitura; a administração usa `admin`/`admin`, só para desenvolvimento. |
+
+O painel cobre todas as métricas da aplicação:
+- transações por status, canal e tipo, e a latência de processamento e HTTP;
+- replays e conflitos de idempotência, duplicatas na inbox;
+- retries e DLQ;
+- espera de lock, timeouts, deadlocks e conflitos de versão;
+- outbox pendente, idade e atraso de publicação, e retenção;
+- referências pendentes, streams e reconciliações.
+
+Um teste garante que cada consulta do painel lê uma métrica que a aplicação exporta, e que toda métrica nova ganha um painel. A configuração está em [observability/](observability/).
 
 ## Usar a API
 
@@ -168,12 +208,12 @@ Os testes precisam do PostgreSQL e do MiniStack de pé (`bun run infra:up`). Cad
 
 | Comando | O que roda |
 |---|---|
-| `bun run test` | toda a suíte: unidade, integração e concorrência (cerca de 2 minutos) |
+| `bun run test` | toda a suíte: unidade, integração e concorrência (cerca de 3 minutos) |
 | `bun run test:unit` | domínio, políticas e utilitários, sem infraestrutura |
 | `bun run test:integration` | banco, filas, HTTP e casos de uso contra PostgreSQL e MiniStack reais |
 | `bun run test:concurrency` | cenários concorrentes em processo e com vários processos `api` e `worker` (C1 a C9, matriz de shutdown, reinício) |
 | `bun run test:spike` | as verificações que fixaram as versões da stack |
-| `bun run test:e2e` | o realm do Keycloak contra a API: tokens reais, papéis e `provider_id` (precisa de `docker compose up -d --wait keycloak`) |
+| `bun run test:e2e` | o realm do Keycloak contra a API (tokens reais, papéis e `provider_id`) e o profile de métricas (Prometheus coletando api e worker com token do Keycloak, painel servido pelo Grafana); precisa de `docker compose --profile observability up -d --build --wait` |
 | `bun run test:load --preset smoke` | teste de carga em infraestrutura isolada própria; metodologia, presets e baseline em [LOAD-TEST.md](LOAD-TEST.md) |
 | `bun run typecheck` · `bun run lint` · `bun run format` | `tsc --noEmit`; ESLint e Prettier em modo de checagem; formatação |
 
@@ -228,6 +268,20 @@ Todas são validadas no boot; um valor inválido derruba o processo com uma mens
 | `STREAM_HEARTBEAT_INTERVAL_MS` | `15000` | comentário `keep-alive` nos streams parados |
 | `STREAM_MAX_STREAMS` | `1000` | streams abertos por réplica; acima disso, 503 `STREAM_CAPACITY_EXCEEDED` |
 
+## Configuração de produção
+
+O Compose é o ambiente local. Fora dele, estes pontos mudam, cada um com a medição ou a decisão que o justifica:
+
+| Ponto | Local | Produção |
+|---|---|---|
+| PostgreSQL | padrões da imagem | `shared_buffers` em cerca de 25% da RAM e `effective_cache_size` em 50% a 75%, para o conjunto de trabalho caber no cache. `max_wal_size` dimensionado pelo WAL gerado entre checkpoints (o harness usa 8 GB), `checkpoint_timeout` de 15 min e `wal_compression=lz4`, para os checkpoints não virem por volume de WAL. Com os padrões, uma base de 1 milhão de wallets a 600 req/s tinha checkpoints a cada 20 a 150 s, e eles dominavam a cauda; com essa configuração, não. O harness de carga usa exatamente esses parâmetros (ver [LOAD-TEST.md](LOAD-TEST.md)). |
+| Migrations em tabela grande | — | índice com `CONCURRENTLY`, `CHECK` como `NOT VALID` + `VALIDATE` (ver ARCHITECTURE.md) |
+| Keycloak | HTTP, `admin`/`admin`, segredos fictícios dos clientes | TLS no proxy ou no Keycloak; `KC_HOSTNAME` no endereço público; segredos de administração, do banco e dos clientes gerados e guardados num cofre; o realm gerido como código |
+| JWKS | rede do Compose | HTTPS ou rede interna confiável |
+| Retenção | ligada no worker | ligada em uma ou duas réplicas do worker, porque o ritmo vale por réplica |
+| api e worker | 1 CPU e 512 MB por container | o Bun usa um núcleo por processo; escalar horizontalmente, com um balanceador na frente das apis |
+| SQS | MiniStack | SQS real, com a DLQ e o redrive do bootstrap |
+
 ## Problemas comuns
 
 | Sintoma | Causa provável e solução |
@@ -258,4 +312,5 @@ src/
 test/
   unit/ · integration/ · concurrency/ · e2e/ · spike/ · load/ · support/
 keycloak/         realm importado pelo Compose
+observability/    Prometheus e Grafana do profile observability (configuração e painel)
 ```
