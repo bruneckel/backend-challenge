@@ -109,6 +109,21 @@ describe('MikroOrmWalletRepository', () => {
     });
   });
 
+  test('lists wallet ids in order after a position', async () => {
+    const ids = [(await stored()).id, (await stored()).id, (await stored()).id];
+
+    const all = await harness.unitOfWork.run(({ wallets }) =>
+      wallets.idsAfter(undefined, 1_000),
+    );
+    const next = await harness.unitOfWork.run(({ wallets }) =>
+      wallets.idsAfter(ids[0], 2),
+    );
+
+    expect(all.filter((id) => ids.includes(id))).toEqual(ids);
+    expect(all).toEqual([...all].sort());
+    expect(next).toEqual(ids.slice(1));
+  });
+
   test('reads no versions for an empty list', async () => {
     const versions = await harness.unitOfWork.run(({ wallets }) =>
       wallets.versionsOf([]),
