@@ -151,6 +151,12 @@ export async function runHttpFile(
   file: HttpFile,
   overrides: Readonly<Record<string, string>> = {},
 ): Promise<HttpExchange[]> {
+  const undeclared = Object.keys(overrides).find(
+    (name) => !(name in file.variables),
+  );
+  if (undeclared !== undefined) {
+    throw new Error(`Override for undeclared variable {{${undeclared}}}`);
+  }
   const variables = { ...file.variables, ...overrides };
   const responses = new Map<string, unknown>();
   const exchanges: HttpExchange[] = [];

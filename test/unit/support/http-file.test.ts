@@ -124,10 +124,22 @@ describe('runHttpFile', () => {
   });
 
   test('fails naming a variable that does not exist', async () => {
-    const file = parseHttpFile('### Typo\nGET {{apii}}/things\n');
+    const file = parseHttpFile(
+      '@api = http://example.invalid\n\n### Typo\nGET {{apii}}/things\n',
+    );
 
     await expect(runHttpFile(file, { api: base })).rejects.toThrow(
       'Unknown variable {{apii}}',
+    );
+  });
+
+  test('refuses an override for a variable the file does not declare', async () => {
+    const file = parseHttpFile(
+      '@apii = http://example.invalid\n\n### Misspelled\nGET {{api}}/things\n',
+    );
+
+    await expect(runHttpFile(file, { api: base })).rejects.toThrow(
+      'Override for undeclared variable {{api}}',
     );
   });
 
