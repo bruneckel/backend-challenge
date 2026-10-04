@@ -240,6 +240,18 @@ A retenção pondo em dia uma base que nunca foi limpa ficou indistinguível da 
 - Na escala alvo, a outbox guarda centenas de milhões de linhas, e o autovacuum espera 20% delas mortas. Por isso cada lote continua da posição do anterior.
 - Os planos (`bun test/load/plans.ts`) mostram os dois expurgos por índice: 1,5 ms de mediana por lote de 1.000 na outbox e 2,6 ms na inbox.
 
+### Reconciliação de todas as wallets
+
+A CLI `bun run reconcile` rodou contra o banco-modelo de 1 milhão de wallets, cada uma com 4 operações:
+
+| Concorrência | Wallets | Tempo | Ritmo |
+|---|---|---|---|
+| 1 | 100 mil | 89,9 s | cerca de 1.100 por segundo (0,9 ms por wallet) |
+| 8 | 100 mil | 15,3 s | cerca de 6.500 por segundo |
+| 8 | 1 milhão | 163,8 s | cerca de 6.100 por segundo |
+
+Todas as execuções terminaram com 0 divergências. Cada wallet é uma transação curta de leitura, então o ritmo cresce com a concorrência até o banco virar o limite.
+
 ### Custo das guardas saldo ⇔ ledger (Etapa 4)
 
 O teste foi uma A/B no cenário `http-saturation-3x3`, com degraus de 16, 32 e 64 clientes de 15 s cada e três rodadas alternadas. A versão sem as constraint triggers (`2d22f11`, numa worktree) correu contra a versão com elas. O 3x3 põe mais carga no PostgreSQL do que o 1x1, então mostra melhor um custo que é do banco. Vazão em requisições bem-sucedidas por segundo, média das três rodadas:

@@ -189,6 +189,21 @@ bun run dlq redrive --reason WALLET_NOT_FOUND           # depois que a wallet pa
 
 Só `RETRIES_EXHAUSTED` e `WALLET_NOT_FOUND` podem voltar. O segundo só faz sentido quando a wallet passa a existir com aquele id, por exemplo numa importação que preserva os ids, porque a API gera o id de cada wallet nova. Conflitos e mensagens inválidas precisam de correção na própria mensagem. A ordem de cada wallet é preservada, e reenviar é seguro: a inbox deduplica pelo `messageId`.
 
+## Reconciliar todas as wallets
+
+```bash
+bun run reconcile                                  # todas as wallets, 4 de cada vez
+bun run reconcile --concurrency 8 --page-size 1000
+bun run reconcile --limit 100000                   # para depois de 100 mil wallets
+bun run reconcile --after <walletId>               # retoma depois da última conferida
+```
+
+A CLI percorre as wallets em ordem de id e roda em cada uma a mesma reconciliação do endpoint, sem corrigir nada.
+- **Saída:** uma linha JSON por wallet divergente, com o id, os tipos de divergência (`balance`, `chain` ou `version`) e as contagens, nunca valores. Depois, um resumo com o total conferido, o número de divergentes e a última wallet, que serve para retomar com `--after`.
+- **Código de saída:** 0 quando tudo bate, 1 quando alguma wallet diverge e 2 em erro de uso ou de execução. Isso permite usar a CLI num agendador ou num pipeline.
+- **Quando usar:** antes de aplicar os triggers saldo ⇔ ledger numa base existente, e como conferência periódica. Uma wallet muito longa pode pedir um `DB_STATEMENT_TIMEOUT_MS` maior (ver ARCHITECTURE.md, "Reconciliação").
+- **Custo medido:** na base de 1 milhão de wallets do harness de carga, a CLI conferiu tudo em 164 s com `--concurrency 8`.
+
 ## Rodar localmente, sem a imagem da aplicação
 
 ```bash

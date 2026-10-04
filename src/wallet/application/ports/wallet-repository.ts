@@ -41,6 +41,7 @@ export interface WalletRepository {
   findByOwner(playerId: string, currency: string): Promise<Wallet | null>;
   lockForUpdate(id: string): Promise<Wallet | null>;
   versionsOf(ids: readonly string[]): Promise<ReadonlyMap<string, number>>;
+  idsAfter(after: string | undefined, limit: number): Promise<string[]>;
   insert(wallet: Wallet): Promise<void>;
   applyBalanceChange(wallet: Wallet, expectedVersion: number): Promise<void>;
 }

@@ -9,6 +9,7 @@
     "bootstrap": "bun src/main.bootstrap.ts",
     "demo:send-message": "bun src/cli/send-demo-message.ts",
     "dlq": "bun src/cli/dead-letters.ts",
+    "reconcile": "bun src/cli/reconcile-wallets.ts",
     "migrate:up": "bun src/platform/database/migrate.ts up",
     "migrate:down": "bun src/platform/database/migrate.ts down",
     "typecheck": "tsc --noEmit",
