@@ -66,7 +66,10 @@ describe('repositories and the identity map', () => {
         await wallets.findById(opened.wallet.id);
         await wallets.lockForUpdate(opened.wallet.id);
         await transactions.findById(bet.id);
-        await transactions.findByIdempotencyKey(bet.idempotencyKey);
+        await transactions.findByIdempotencyKey(
+          bet.providerId,
+          bet.idempotencyKey,
+        );
         await transactions.findByExternalId(
           bet.providerId,
           bet.externalTransactionId,

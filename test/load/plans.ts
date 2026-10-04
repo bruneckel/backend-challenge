@@ -114,9 +114,9 @@ const checks: [string, string, unknown[]][] = [
     [sample.id],
   ],
   [
-    'find a transaction by idempotency key',
-    'select * from wager_transactions where idempotency_key = $1',
-    [sample.idempotency_key],
+    'find a transaction by provider and idempotency key',
+    'select * from wager_transactions where provider_id = $1 and idempotency_key = $2',
+    [sample.provider_id, sample.idempotency_key],
   ],
   [
     'find a transaction by provider and external id',

@@ -296,6 +296,10 @@ A migration que acrescentou `BALANCE_LIMIT_EXCEEDED` trocava o `CHECK` de `failu
 - **Projeção:** em linha reta, com 100 milhões de transações seriam cerca de 8 s com toda operação financeira parada, acima do `lock_timeout` de 3 s da aplicação.
 - **Decisão:** a migration foi reescrita antes de ser publicada. Ela roda fora de transação e valida num comando separado, que usa `SHARE UPDATE EXCLUSIVE` e deixa leitura e escrita seguirem.
 - **Regra para as próximas** (ARCHITECTURE.md): `CHECK` como `NOT VALID` + `VALIDATE`, índice com `CONCURRENTLY`.
+- **Escopo da idempotência por provedor:** a migration seguinte aplicou a regra numa cópia da base com wallet longa, com 6 milhões de transações:
+  - o `CREATE UNIQUE INDEX CONCURRENTLY` de `(provider_id, idempotency_key)` levou 6,9 s, com 1.083 escritas e 1.102 leituras atendidas no meio e máximo de 13,6 ms, igual ao de antes;
+  - promover o índice a constraint levou 6 ms, e remover a constraint global, 25 ms;
+  - a busca nova usa o índice, com 0,013 ms de mediana no `plans.ts`.
 
 ### PoC de OpenTelemetry (Etapa 4)
 

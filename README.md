@@ -108,7 +108,7 @@ curl -s -X POST localhost:3000/wallets \
   -d '{"playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1","initialBalance":{"amount":"100.00","currency":"BRL"}}'
 ```
 
-A resposta traz o `id` da wallet. Com ele, uma aposta do `provider-a` (o header `Idempotency-Key` é obrigatório; reenviar com a mesma key devolve o mesmo resultado, com `idempotentReplay: true`):
+A resposta traz o `id` da wallet. Com ele, uma aposta do `provider-a` (o header `Idempotency-Key` é obrigatório e vale por provedor; reenviar com a mesma key devolve o mesmo resultado, com `idempotentReplay: true`):
 
 ```bash
 WALLET=<id da wallet>

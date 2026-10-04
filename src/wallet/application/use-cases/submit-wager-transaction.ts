@@ -197,6 +197,7 @@ export class SubmitWagerTransaction {
     transaction: WagerTransaction,
   ): Promise<TransactionResult | undefined> {
     const existing = await scope.transactions.findByIdempotencyKey(
+      transaction.providerId,
       transaction.idempotencyKey,
     );
     if (existing === null) {

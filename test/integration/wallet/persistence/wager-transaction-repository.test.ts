@@ -159,17 +159,21 @@ describe('MikroOrmWagerTransactionRepository', () => {
     expect(found?.referenceTransactionId).toBe(bet.id);
   });
 
-  test('finds a transaction by idempotency key and by provider and external id', async () => {
+  test('finds a transaction by provider and idempotency key and by provider and external id', async () => {
     const bet = await stored(processedBet());
 
     const byKey = await run(({ transactions }) =>
-      transactions.findByIdempotencyKey(bet.idempotencyKey),
+      transactions.findByIdempotencyKey(bet.providerId, bet.idempotencyKey),
+    );
+    const byKeyOfAnotherProvider = await run(({ transactions }) =>
+      transactions.findByIdempotencyKey('provider-b', bet.idempotencyKey),
     );
     const byExternalId = await run(({ transactions }) =>
       transactions.findByExternalId(bet.providerId, bet.externalTransactionId),
     );
 
     expect(byKey?.id).toBe(bet.id);
+    expect(byKeyOfAnotherProvider).toBeNull();
     expect(byExternalId?.id).toBe(bet.id);
   });
 
@@ -181,7 +185,7 @@ describe('MikroOrmWagerTransactionRepository', () => {
     ).toBeNull();
     expect(
       await run(({ transactions }) =>
-        transactions.findByIdempotencyKey('unknown-key'),
+        transactions.findByIdempotencyKey('provider-a', 'unknown-key'),
       ),
     ).toBeNull();
     expect(
