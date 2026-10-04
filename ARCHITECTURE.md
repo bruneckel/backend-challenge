@@ -166,10 +166,14 @@ Se a transação foi gravada, o corpo é o resultado `{transactionId, status, ba
 | processada | 200 | resultado |
 | aceita, aguardando referência | 202 | resultado, com `Location` |
 | rejeitada por regra de negócio | 422 | resultado com `failureCode` |
-| payload inválido | 400 | `INVALID_PAYLOAD`, `IDEMPOTENCY_KEY_REQUIRED`, `UNSUPPORTED_KIND`, `REFERENCE_REQUIRED`… |
-| conflito de idempotência | 409 | `IDEMPOTENCY_KEY_CONFLICT`, `EXTERNAL_TRANSACTION_CONFLICT`, `WALLET_ALREADY_EXISTS` |
-| falha transitória de infraestrutura | 503 | `SERVICE_UNAVAILABLE`, `retryable: true`, `Retry-After` |
+| payload ou requisição inválida | 400 | `INVALID_PAYLOAD`, `INVALID_REQUEST`, `INVALID_CURSOR`, `IDEMPOTENCY_KEY_REQUIRED`, `UNSUPPORTED_KIND`, `REFERENCE_REQUIRED`, `REFERENCE_NOT_ALLOWED`, `INVALID_AMOUNT` |
 | sem token, token inválido, sem permissão | 401, 403 | `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `ACCESS_DENIED` |
+| recurso inexistente | 404 | `WALLET_NOT_FOUND`, `TRANSACTION_NOT_FOUND`, `NOT_FOUND` |
+| conflito de idempotência | 409 | `IDEMPOTENCY_KEY_CONFLICT`, `EXTERNAL_TRANSACTION_CONFLICT`, `WALLET_ALREADY_EXISTS`, `DUPLICATE_WAGER_TRANSACTION` |
+| corpo grande demais | 413 | `PAYLOAD_TOO_LARGE` |
+| erro inesperado, nada gravado | 500 | `INTERNAL_ERROR`, `retryable: true`: reenviar com a mesma key é seguro |
+| falha transitória de infraestrutura | 503 | `SERVICE_UNAVAILABLE`, `retryable: true`, `Retry-After` |
+| limite de streams da réplica | 503 | `STREAM_CAPACITY_EXCEEDED`, `retryable: true`, `Retry-After` |
 
 O ledger (`GET /wallets/:walletId/ledger`) usa cursor opaco preso à wallet, do lançamento mais novo para o mais antigo, com `limit` de 1 a 100. Abrir de novo uma wallet existente devolve 409 com o `walletId` dela.
 

@@ -83,4 +83,27 @@ describe('project documentation', () => {
       [],
     );
   });
+
+  test('ARCHITECTURE.md documents every problem code the API answers', async () => {
+    const problems = await Bun.file(
+      resolve(ROOT, 'src/platform/http/problem.ts'),
+    ).text();
+    const architecture = await Bun.file(
+      resolve(ROOT, 'ARCHITECTURE.md'),
+    ).text();
+    const codes = [...problems.matchAll(/^ {2}([A-Z][A-Z_]+): \{/gm)].map(
+      (match) => match[1]!,
+    );
+
+    expect(codes.length).toBeGreaterThan(0);
+    expect(
+      codes.filter((code) => !architecture.includes(`\`${code}\``)),
+    ).toEqual([]);
+  });
+
+  test('README shell blocks leave no placeholder to fill in by hand', async () => {
+    const readme = await Bun.file(resolve(ROOT, 'README.md')).text();
+
+    expect(readme.match(/^\s*[A-Z_]+=<[^>\n]+>/gm) ?? []).toEqual([]);
+  });
 });

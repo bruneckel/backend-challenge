@@ -49,20 +49,20 @@ token() {
 }
 OPERATOR=$(token wagering-operator)
 PROVIDER=$(token provider-a)
-PLAYER=0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1
+PLAYER=$(bun -e 'console.log(crypto.randomUUID())')
 
-# abrir uma wallet com 100.00 (a resposta traz o id)
-curl -s -X POST localhost:3000/wallets \
+# abrir uma wallet com 100.00 e guardar o id
+WALLET=$(curl -s -X POST localhost:3000/wallets \
   -H "authorization: Bearer $OPERATOR" -H 'content-type: application/json' \
-  -d '{"playerId":"'"$PLAYER"'","initialBalance":{"amount":"100.00","currency":"BRL"}}'
-
-WALLET=<id da wallet>
+  -d '{"playerId":"'"$PLAYER"'","initialBalance":{"amount":"100.00","currency":"BRL"}}' |
+  sed -E 's/.*"id":"([^"]+)".*/\1/')
+echo "$WALLET"
 
 # apostar 25.00
 curl -s -X POST localhost:3000/wagering/transactions \
   -H "authorization: Bearer $PROVIDER" -H 'content-type: application/json' \
-  -H 'Idempotency-Key: provider-a:transaction-123' \
-  -d '{"providerId":"provider-a","externalTransactionId":"transaction-123","playerId":"'"$PLAYER"'","walletId":"'"$WALLET"'","roundId":"round-987","gameId":"fortune-chimp","kind":"BET","money":{"amount":"25.00","currency":"BRL"}}'
+  -H "Idempotency-Key: provider-a:bet-$WALLET" \
+  -d '{"providerId":"provider-a","externalTransactionId":"bet-'"$WALLET"'","playerId":"'"$PLAYER"'","walletId":"'"$WALLET"'","roundId":"round-987","gameId":"fortune-chimp","kind":"BET","money":{"amount":"25.00","currency":"BRL"}}'
 
 # consultar saldo, ledger e reconciliação
 curl -s localhost:3000/wallets/$WALLET -H "authorization: Bearer $OPERATOR"
